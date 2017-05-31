@@ -1,0 +1,11 @@
+[package]
+name = "cov-specimen-multiple-tests"
+version = "0.1.0"
+authors = ["kennytm <kennytm@gmail.com>"]
+description = "Test coverage report when multiple test files exist."
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "check"

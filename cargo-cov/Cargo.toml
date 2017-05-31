@@ -1,0 +1,44 @@
+[package]
+name = "cargo-cov"
+version = "0.0.1"
+authors = ["kennytm <kennytm@gmail.com>"]
+description = "Collect source coverage via LLVM-GCOV (⚠ not fully tested, may eat your laundry)"
+build = "build.rs"
+documentation = "https://docs.rs/crate/cargo-cov"
+repository = "https://github.com/kennytm/cov"
+license = "MIT"
+keywords = ["cargo", "subcommand", "coverage", "gcov", "lcov"]
+categories = ["command-line-utilities", "development-tools", "development-tools::cargo-plugins", "development-tools::testing"]
+
+# Note: `colored` and `pest` (via `tera`) are licensed in MPL-2.0, and `unidecode` (via `slug` via
+# `tera`) in BSD-3. According to https://softwareengineering.stackexchange.com/q/317944, this
+# should not cause any legal problem for keeping `cargo-cov` itself as MIT, as MPL-2.0 is non-viral.
+
+[dependencies]
+cov = { version = "0.0", path = "../cov", features = ["serde_json"] }
+
+bitflags = { version = "0.9", default-features = false }
+clap = "2.24"
+colored = "1.5"
+copy_dir = "0.1"
+env_logger = "0.4"
+error-chain = "0.10"
+glob = "0.2"
+lazy_static = "0.2"
+log = { version = "0.3", features = ["release_max_level_warn"] }
+md5 = "0.3" # <- md5 needed for coveralls
+natord = "1.0"
+open = "1.2"
+rand = "0.3"
+rustc-demangle = "0.1"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+tera = "0.10"
+toml = "0.4"
+
+[[bin]]
+name = "cargo-cov"
+
+[[bin]]
+name = "shim-for-cargo-cov"

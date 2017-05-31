@@ -1,0 +1,34 @@
+{% import "macros.html" as macros %}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Coverage report for {{ crate_path | filename | escape }}</title>
+        <link rel="stylesheet" href="static/common.css" />
+    </head>
+    <body>
+        <h1>Coverage report for <strong>{{ crate_path | filename | escape }}</strong></h1>
+        <table id="summary" class="sortable">
+            <thead>
+                <tr>
+                    <th>Path</th>
+                    <th title="Percentage of covered lines">Lines</th>
+                    <th title="Percentage of taken branches">Branches</th>
+                    <th title="Percentage of called functions">Functions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for file in files %}
+                <tr>
+                    <td><a href="{{ file.symbol }}.html">{{ file.path | simplify_source_path(crate_path=crate_path) | escape }}</a></td>
+                    {% set s = file.summary %}
+                    {{ macros::coverage_percent_cell(value=s.lines_covered, total=s.lines_count, fair=75, good=90) }}
+                    {{ macros::coverage_percent_cell(value=s.branches_taken, total=s.branches_count, fair=50, good=75) }}
+                    {{ macros::coverage_percent_cell(value=s.functions_called, total=s.functions_count, fair=75, good=90) }}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <script src="static/sortable.js"></script>
+    </body>
+</html>

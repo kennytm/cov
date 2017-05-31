@@ -1,0 +1,725 @@
+//! Collect the flat gcov statistics into a control-flow graph with edge count.
+
+use error::*;
+use intern::{Symbol, UNKNOWN_SYMBOL};
+use raw::*;
+use report::{self, Report};
+use utils::*;
+
+use fixedbitset::FixedBitSet;
+use petgraph::Direction;
+use petgraph::graph::{DiGraph, EdgeIndex, EdgeReference, NodeIndex};
+use petgraph::visit::{Dfs, EdgeFiltered, EdgeRef, IntoNodeReferences};
+
+use std::{mem, usize};
+use std::collections::HashMap;
+use std::ops::{Index, IndexMut};
+
+//----------------------------------------------------------------------------------------------------------------------
+//{{{ Graph
+
+/// A counter graph. The graph records how many times an edge branching from one basic-block to
+/// another is hit.
+#[derive(Default, Debug, Clone)]
+pub struct Graph {
+    version: Version,
+    functions: Vec<FunctionInfo>,
+    index: HashMap<FunctionIdentity, FunctionIndex>,
+    graph: DiGraph<BlockInfo, ArcInfo>,
+}
+
+impl Graph {
+    /// Merges a `*.gcno` or `*.gcda` file into the graph.
+    pub fn merge(&mut self, gcov: Gcov) -> Result<()> {
+        match self.version {
+            INVALID_VERSION => self.version = gcov.version,
+            v => ensure!(v == gcov.version, ErrorKind::VersionMismatch(v, gcov.version)),
+        }
+        match gcov.ty {
+            Type::Gcno => self.merge_gcno(gcov),
+            Type::Gcda => self.merge_gcda(gcov),
+        }
+    }
+
+    fn merge_gcno(&mut self, gcno: Gcov) -> Result<()> {
+        let mut cur = INVALID_FUNCTION_INDEX;
+        let checksum = gcno.checksum;
+
+        for record in gcno.records {
+            match record {
+                Record::Function(ident, function) => cur = self.add_function(checksum, ident, function)?,
+                Record::Blocks(blocks) => self.add_blocks(cur, blocks)?,
+                Record::Arcs(arcs) => self.add_arcs(cur, arcs)?,
+                Record::Lines(lines) => self.add_lines(cur, lines)?,
+                _ => trace!("gcno-unknown-record: {:?}", record),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Merges the statistics from a parsed `*.gcda` file into the graph. The counts are increased
+    /// accordingly.
+    fn merge_gcda(&mut self, gcda: Gcov) -> Result<()> {
+        let mut cur = INVALID_FUNCTION_INDEX;
+        let checksum = gcda.checksum;
+
+        for record in gcda.records {
+            match record {
+                Record::Function(ident, function) => cur = self.find_function(checksum, ident, function)?,
+                Record::ArcCounts(ac) => self.add_arc_counts(cur, ac)?,
+                Record::Summary(_) => {},
+                _ => trace!("gcda-unknown-record: {:?}", record),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Obtains a coverage report from the graph.
+    pub fn report(&self) -> Report {
+        let mut r = Report::default();
+
+        for function in &self.functions {
+            self.report_function(function, &mut r);
+        }
+
+        for (src, block) in self.graph.node_references() {
+            if let Some(last_line) = self.report_block(block, &mut r) {
+                let function = &self[block.index];
+                let exit_block = function.exit_block(self.version);
+                let file = r.files.get_mut(&last_line.0).unwrap();
+                let branches = &mut file.lines.get_mut(&last_line.1).unwrap().branches;
+                for edge_ref in self.graph.edges(src) {
+                    // ignore zero arcs leading to exit block.
+                    if edge_ref.target() == exit_block && edge_ref.weight().count == Some(0) {
+                        continue;
+                    }
+                    let branch = self.report_arc(edge_ref);
+                    branches.extend(branch);
+                }
+            }
+        }
+
+        r
+    }
+
+    /// Populates the report with information about a function.
+    fn report_function(&self, function: &FunctionInfo, r: &mut Report) {
+        let source = function.source.unwrap_or_default();
+        let entry_block = function.entry_block();
+        let exit_block = function.exit_block(self.version);
+
+        let blocks_count = function.nodes.len() - 2;
+        let blocks_executed = function.nodes.iter().filter(|&&ni| ni != entry_block && ni != exit_block && self.graph[ni].count > Some(0)).count();
+
+        let (branches_count, branches_executed, branches_taken) = function
+            .arcs
+            .iter()
+            .filter_map(|&ei| {
+                let graph = &self.graph;
+                let arc = &graph[ei];
+                if arc.attr.contains(ARC_ATTR_UNCONDITIONAL) {
+                    return None;
+                }
+                let arc_taken = arc.count > Some(0);
+                let src = graph.edge_endpoints(ei).unwrap().0;
+                let src_executed = graph[src].count > Some(0);
+                Some((1, src_executed as usize, arc_taken as usize))
+            })
+            .fold((0, 0, 0), tuple_3_add);
+
+        let entry_count = self.graph[entry_block].count.unwrap_or(0);
+        let mut exit_count = self.graph[exit_block].count.unwrap_or(0);
+        exit_count -= self.graph
+            .edges_directed(exit_block, Direction::Incoming)
+            .filter_map(|er| {
+                let arc = er.weight();
+                if arc.attr.contains(ARC_ATTR_FAKE) {
+                    arc.count
+                } else {
+                    None
+                }
+            })
+            .sum();
+
+        let report_function = report::Function {
+            name: source.name,
+            line: source.line,
+            column: 0,
+            summary: report::FunctionSummary {
+                blocks_count,
+                blocks_executed,
+                entry_count,
+                exit_count,
+                branches_count,
+                branches_executed,
+                branches_taken,
+            },
+        };
+        r.files.entry(source.filename).or_default().functions.push(report_function);
+    }
+
+    /// Populates the report with information about a block (source code lines).
+    fn report_block(&self, block: &BlockInfo, r: &mut Report) -> Option<(Symbol, u32)> {
+        let block_count = block.count.unwrap_or(0);
+
+        let mut last_line = None;
+        for (filename, line_number) in block.iter_lines() {
+            let file = r.files.entry(filename).or_default();
+            let line = file.lines.entry(line_number).or_default();
+            line.count += block_count;
+            line.attr |= block.attr;
+            last_line = Some((filename, line_number));
+        }
+
+        last_line
+    }
+
+    /// Populates the report with information about an arc.
+    fn report_arc(&self, edge_ref: EdgeReference<ArcInfo>) -> Option<report::Branch> {
+        let arc = edge_ref.weight();
+
+        // ignore unconditional arcs, the contribution is obvious.
+        let attr = arc.attr;
+        if attr.contains(ARC_ATTR_UNCONDITIONAL) && !attr.contains(ARC_ATTR_CALL_NON_RETURN) {
+            return None;
+        }
+
+        let dest = &self.graph[edge_ref.target()];
+        let (filename, line) = dest.iter_lines().next().unwrap_or((UNKNOWN_SYMBOL, 0));
+        Some(report::Branch {
+            count: arc.count.unwrap_or(0),
+            attr: arc.attr,
+            filename,
+            line,
+            column: 0,
+        })
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+struct FunctionIndex(usize);
+
+const INVALID_FUNCTION_INDEX: FunctionIndex = FunctionIndex(usize::MAX);
+
+impl Index<FunctionIndex> for Graph {
+    type Output = FunctionInfo;
+    fn index(&self, index: FunctionIndex) -> &FunctionInfo {
+        &self.functions[index.0]
+    }
+}
+
+impl IndexMut<FunctionIndex> for Graph {
+    fn index_mut(&mut self, index: FunctionIndex) -> &mut FunctionInfo {
+        &mut self.functions[index.0]
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+struct FunctionIdentity {
+    file_checksum: u32,
+    ident: Ident,
+    lineno_checksum: u32,
+    cfg_checksum: Option<u32>,
+}
+
+impl FunctionIdentity {
+    fn new(file_checksum: u32, ident: Ident, function: &Function) -> FunctionIdentity {
+        FunctionIdentity {
+            file_checksum,
+            ident,
+            lineno_checksum: function.lineno_checksum,
+            cfg_checksum: function.cfg_checksum,
+        }
+    }
+}
+
+//}}}
+//----------------------------------------------------------------------------------------------------------------------
+//{{{ GraphBase analyze
+
+impl Graph {
+    /// Analyzes the graph to identify additional attributes of blocks.
+    pub fn analyze(&mut self) {
+        self.mark_catch_blocks();
+        self.mark_unconditional_arcs();
+        self.mark_exceptional_blocks();
+        self.propagate_counts();
+        if cfg!(debug_assertions) {
+            self.verify_counts();
+        }
+        self.mark_exceptional_blocks();
+    }
+
+    /// Marks blocks and arc with attributes associated with throwing exceptions.
+    fn mark_catch_blocks(&mut self) {
+        let graph = &mut self.graph;
+        for src in graph.node_indices() {
+            let edges = graph.edges(src).map(|er| (er.weight().attr, er.id(), er.target())).collect::<Vec<_>>();
+
+            let mut mark_throw = false;
+            for &(_, ei, dest) in edges.iter().filter(|&&(a, _, _)| a.contains(ARC_ATTR_FAKE)) {
+                let (ni, block_attr, arc_attr) = if graph[src].is_entry_block() {
+                    (dest, BLOCK_ATTR_NONLOCAL_RETURN, ARC_ATTR_NONLOCAL_RETURN)
+                } else {
+                    mark_throw = true;
+                    (src, BLOCK_ATTR_CALL_SITE, ARC_ATTR_CALL_NON_RETURN)
+                };
+                graph[ni].attr |= block_attr;
+                graph[ei].attr |= arc_attr;
+            }
+
+            if mark_throw {
+                let edges_iter = edges.into_iter().filter(|&(a, _, _)| !a.intersects(ARC_ATTR_FAKE | ARC_ATTR_FALLTHROUGH));
+                for (_, ei, _) in edges_iter {
+                    graph[ei].attr |= ARC_ATTR_THROW;
+                }
+            }
+        }
+    }
+
+    /// Marks single arcs connecting two blocks as "unconditional".
+    fn mark_unconditional_arcs(&mut self) {
+        let graph = &mut self.graph;
+
+        let unconditional_edges = graph
+            .node_indices()
+            .filter_map(|src| {
+                let mut non_fake_edges = graph.edges(src).filter(|edge_ref| !edge_ref.weight().attr.contains(ARC_ATTR_FAKE));
+                if let Some(er) = non_fake_edges.next() {
+                    if non_fake_edges.next().is_none() {
+                        return Some((er.source(), er.target(), er.id(), er.weight().attr));
+                    }
+                }
+                None
+            })
+            .collect::<Vec<_>>();
+        // we need to collect the result, so that we can mutate the graph.
+
+        for (src, dest, ei, arc_attr) in unconditional_edges {
+            graph[ei].attr |= ARC_ATTR_UNCONDITIONAL;
+            if arc_attr.contains(ARC_ATTR_FALLTHROUGH) && graph[src].attr.contains(BLOCK_ATTR_CALL_SITE) {
+                graph[dest].attr |= BLOCK_ATTR_CALL_RETURN;
+            }
+        }
+    }
+
+    /// Propagates the counts stored on real arcs to the other arcs and blocks in the whole graph.
+    ///
+    /// The algorithm is adapted from gcov's `solve_flow_graph` function.
+    fn propagate_counts(&mut self) {
+        let mut block_status = self.create_block_status();
+
+        let mut old_green_blocks = FixedBitSet::with_capacity(self.graph.node_count());
+        let mut green_blocks = old_green_blocks.clone();
+        let mut red_blocks = old_green_blocks.clone();
+        fill_fixedbitset_with_ones(&mut red_blocks);
+
+        let mut should_process = true;
+
+        while should_process {
+            should_process = false;
+
+            for ni in red_blocks.ones() {
+                should_process = true;
+                match self.process_red_block(NodeIndex::new(ni), &block_status) {
+                    BlockColor::White => {},
+                    BlockColor::Red => unreachable!(),
+                    BlockColor::Green => green_blocks.insert(ni),
+                }
+            }
+            red_blocks.clear();
+
+            mem::swap(&mut green_blocks, &mut old_green_blocks); // old_green_blocks is always empty.
+            for src in old_green_blocks.ones() {
+                should_process = true;
+                let src = NodeIndex::new(src);
+                for dir in &[Direction::Outgoing, Direction::Incoming] {
+                    let dest = self.process_green_block(src, *dir, &mut block_status);
+                    if let Some((dest, ac)) = dest {
+                        match self.process_green_block_dest(dest, ac, *dir, &mut block_status) {
+                            BlockColor::White => {},
+                            BlockColor::Red => red_blocks.insert(dest.index()),
+                            BlockColor::Green => green_blocks.insert(dest.index()),
+                        }
+                    }
+                }
+            }
+            old_green_blocks.clear();
+        }
+    }
+
+    // Initialize for propagate_counts.
+    //
+    // * all arcs are "valid" if and only if the ON_TREE attribute is cleared.
+    // * all blocks are "invalid".
+    // * place all blocks in the "red" set.
+    //
+    // we cache the total incoming/outgoing counts into a structure called BlockStatus to avoid
+    // reiterating arc_counts everytime.
+    fn create_block_status(&self) -> Vec<BlockStatus> {
+        let mut block_status = vec![BlockStatus::default(); self.graph.node_count()];
+
+        for edge_ref in self.graph.edge_references() {
+            let weight = edge_ref.weight();
+            let src = edge_ref.source().index();
+            let dest = edge_ref.target().index();
+            if let Some(count) = weight.count {
+                block_status[src].outgoing_total_count += count;
+                block_status[dest].incoming_total_count += count;
+            } else {
+                block_status[src].outgoing_invalid_arcs += 1;
+                block_status[dest].incoming_invalid_arcs += 1;
+            }
+        }
+
+        // entry and exit blocks are full of invalid arcs.
+        for function in &self.functions {
+            let entry_block = function.entry_block();
+            let exit_block = function.exit_block(self.version);
+            block_status[entry_block.index()].incoming_invalid_arcs = usize::MAX;
+            block_status[exit_block.index()].outgoing_invalid_arcs = usize::MAX;
+        }
+
+        block_status
+    }
+
+    // Processes a "red" block. For every "red" block,
+    //
+    // * remove it from the "red" set.
+    // * if the block has no outgoing "invalid" arcs, sum the count of those arcs.
+    // * otherwise, if the block has no incoming "invalid" arcs, sum their count instead.
+    // * otherwise (all neighbor arcs are "invalid"), skip this block.
+    // * set the sum to be the "valid" count of the block.
+    // * move the block to the "green" set.
+    fn process_red_block(&mut self, ni: NodeIndex, bs: &[BlockStatus]) -> BlockColor {
+        let status = &bs[ni.index()];
+        let total = if status.outgoing_invalid_arcs == 0 {
+            status.outgoing_total_count
+        } else if status.incoming_invalid_arcs == 0 {
+            status.incoming_total_count
+        } else {
+            return BlockColor::White;
+        };
+        self.graph.node_weight_mut(ni).unwrap().count = Some(total);
+        BlockColor::Green
+    }
+
+    // Process "green" blocks (for the block itself). For every "green" block,
+    //
+    // * remove it from the "green" set.
+    // * if the block has exactly 1 outgoing "invalid" arc,
+    //     - set the arc's "valid" count to be the count of the block, subtracting all outgoing counts.
+    //     - if the block at the other end of the arc is "valid" and has exactly 1 incoming "invalid" arc,
+    //         add it to the "green" set.
+    //     - otherwise, if the other block is invalid and has no incoming "invalid" arcs,
+    //         add it to the "red" set.
+    // * repeat with "incoming" arcs replacing "outgoing" arcs.
+    fn process_green_block(&mut self, src: NodeIndex, direction: Direction, bs: &mut [BlockStatus]) -> Option<(NodeIndex, u64)> {
+        let dest;
+        let arc_count;
+        {
+            let status = &mut bs[src.index()];
+            let (src_ia, src_tc) = status.totals_mut(direction);
+            if *src_ia != 1 {
+                return None;
+            }
+            let (invalid_arc_id, d) = self.graph
+                .edges_directed(src, direction)
+                .filter_map(|edge_ref| if edge_ref.weight().count.is_some() {
+                    None
+                } else {
+                    Some((
+                        edge_ref.id(),
+                        match direction {
+                            Direction::Outgoing => edge_ref.target(),
+                            Direction::Incoming => edge_ref.source(),
+                        },
+                    ))
+                })
+                .next()
+                .expect("An arc without any count yet");
+            let (block, edge) = self.graph.index_twice_mut(src, invalid_arc_id);
+            let block_count = block.count.expect("Block count");
+            dest = d;
+            arc_count = block_count - *src_tc;
+            edge.count = Some(arc_count);
+            *src_tc = block_count;
+            *src_ia -= 1;
+        }
+        Some((dest, arc_count))
+    }
+
+    // Process "green" blocks (for the other end of the arc). See `process_green_src_block` for
+    // details.
+    fn process_green_block_dest(&self, dest: NodeIndex, arc_count: u64, direction: Direction, bs: &mut [BlockStatus]) -> BlockColor {
+        let status = &mut bs[dest.index()];
+        let (dest_ia, dest_tc) = status.totals_mut(direction.opposite());
+        *dest_tc += arc_count;
+        *dest_ia -= 1;
+        match (self.graph[dest].count, *dest_ia) {
+            (Some(_), 1) => BlockColor::Green,
+            (None, 0) => BlockColor::Red,
+            _ => BlockColor::White,
+        }
+    }
+
+    /// Verifies that `propagate_counts`
+    fn verify_counts(&self) {
+        for (_, block) in self.graph.node_references() {
+            assert!(block.count.is_some());
+        }
+        for edge_ref in self.graph.edge_references() {
+            assert!(edge_ref.weight().count.is_some());
+        }
+    }
+
+    fn mark_exceptional_blocks(&mut self) {
+        let mut stack = Vec::with_capacity(self.functions.len());
+        for (i, block) in self.graph.node_weights_mut().enumerate() {
+            if block.is_entry_block() {
+                stack.push(NodeIndex::new(i));
+            } else {
+                block.attr |= BLOCK_ATTR_EXCEPTIONAL;
+            }
+        }
+
+        let mut dfs = Dfs::empty(&EdgeFiltered(&self.graph, |er: EdgeReference<ArcInfo>| !er.weight().attr.intersects(ARC_ATTR_FAKE | ARC_ATTR_THROW)));
+        dfs.stack = stack;
+
+        while let Some(non_exc_ni) = dfs.next(&self.graph) {
+            self.graph[non_exc_ni].attr.remove(BLOCK_ATTR_EXCEPTIONAL);
+        }
+    }
+}
+
+enum BlockColor {
+    White,
+    Red,
+    Green,
+}
+
+#[derive(Default, Clone)]
+struct BlockStatus {
+    outgoing_total_count: u64,
+    outgoing_invalid_arcs: usize,
+    incoming_total_count: u64,
+    incoming_invalid_arcs: usize,
+}
+
+impl BlockStatus {
+    fn totals_mut(&mut self, direction: Direction) -> (&mut usize, &mut u64) {
+        match direction {
+            Direction::Outgoing => (&mut self.outgoing_invalid_arcs, &mut self.outgoing_total_count),
+            Direction::Incoming => (&mut self.incoming_invalid_arcs, &mut self.incoming_total_count),
+        }
+    }
+}
+
+//}}}
+//----------------------------------------------------------------------------------------------------------------------
+//{{{ GraphBase construction
+
+/// Equivalent to `&mut self[index]` but without borrowing the whole `self`.
+macro_rules! get_function {
+    ($self:expr, $index:expr) => { &mut $self.functions[$index.0] }
+}
+
+fn ensure_eq_or_zero(kind: &'static str, lhs: usize, rhs: usize) -> Result<bool> {
+    if lhs == 0 || lhs == rhs {
+        Ok(lhs == 0)
+    } else {
+        Err(ErrorKind::CountsMismatch(kind, Type::Gcno, lhs, rhs).into())
+    }
+}
+
+impl Graph {
+    fn add_function(&mut self, checksum: u32, ident: Ident, function: Function) -> Result<FunctionIndex> {
+        let new_index = FunctionIndex(self.functions.len());
+        trace!("gcno-add-function #{}@{}: {:?} -> {:?}", ident, checksum, function, new_index);
+
+        let identity = FunctionIdentity::new(checksum, ident, &function);
+        let old_index = self.index.insert(identity, new_index);
+        ensure!(old_index.is_none(), ErrorKind::DuplicatedFunction(checksum, ident));
+
+        self.functions.push(FunctionInfo {
+            source: function.source,
+            ..FunctionInfo::default()
+        });
+        Ok(new_index)
+    }
+
+    fn add_blocks(&mut self, index: FunctionIndex, blocks: Blocks) -> Result<()> {
+        let count = blocks.flags.len();
+        trace!("gcno-add-blocks ({}): {} blocks", index.0, count);
+
+        let function = get_function!(self, index);
+        if ensure_eq_or_zero("blocks", function.nodes.len(), blocks.flags.len())? {
+            let graph = &mut self.graph;
+            function.nodes = blocks
+                .flags
+                .iter()
+                .enumerate()
+                .map(move |(block, &attr)| {
+                    graph.add_node(BlockInfo {
+                        index,
+                        block,
+                        attr,
+                        count: None,
+                        lines: Vec::new(),
+                    })
+                })
+                .collect();
+        }
+        Ok(())
+    }
+
+    fn add_arcs(&mut self, index: FunctionIndex, arcs: Arcs) -> Result<()> {
+        trace!("gcno-add-arcs ({}): {:?} -> {} dests", index.0, arcs.src_block, arcs.arcs.len());
+
+        let function = get_function!(self, index);
+        let src_ni = function.node(arcs.src_block);
+        if ensure_eq_or_zero("arcs", self.graph.neighbors(src_ni).count(), arcs.arcs.len())? {
+            for (local_arc_index, arc) in arcs.arcs.iter().enumerate() {
+                let dest_ni = function.node(arc.dest_block);
+
+                let is_real_arc = !arc.flags.contains(ARC_ATTR_ON_TREE);
+                let arc_info = ArcInfo {
+                    index,
+                    arc: local_arc_index,
+                    count: if is_real_arc { Some(0) } else { None },
+                    attr: arc.flags,
+                };
+                let ei = self.graph.add_edge(src_ni, dest_ni, arc_info);
+                if is_real_arc {
+                    function.arcs.push(ei);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn add_lines(&mut self, index: FunctionIndex, lines: Lines) -> Result<()> {
+        trace!("gcno-add-lines ({}): {:?} -> {} lines", index.0, lines.block_number, lines.lines.len());
+        let function = get_function!(self, index);
+        let ni = function.node(lines.block_number);
+        let block = self.graph.node_weight_mut(ni).unwrap();
+        if ensure_eq_or_zero("lines", block.lines.len(), lines.lines.len())? {
+            block.lines = lines.lines;
+        }
+        Ok(())
+    }
+
+    fn find_function(&self, checksum: u32, ident: Ident, function: Function) -> Result<FunctionIndex> {
+        trace!("gcda-function #{}@{}: {:?}", ident, checksum, function);
+        let identity = FunctionIdentity::new(checksum, ident, &function);
+        self.index.get(&identity).cloned().ok_or_else(|| ErrorKind::MissingFunction(checksum, ident).into())
+    }
+
+    fn add_arc_counts(&mut self, index: FunctionIndex, ac: ArcCounts) -> Result<()> {
+        trace!("gcda-arc-counts ({}): {:?}", index.0, ac);
+        let function = get_function!(self, index);
+        ensure!(ac.counts.len() == function.arcs.len(), ErrorKind::CountsMismatch("arcs", Type::Gcda, ac.counts.len(), function.arcs.len()));
+        for (&ei, &new_count) in function.arcs.iter().zip(ac.counts.iter()) {
+            let count = &mut self.graph[ei].count;
+            match *count {
+                None => *count = Some(new_count),
+                Some(ref mut c) => *c += new_count,
+            }
+        }
+        Ok(())
+    }
+}
+
+//}}}
+//----------------------------------------------------------------------------------------------------------------------
+//{{{ ArcInfo
+
+#[derive(Clone, PartialEq, Eq, Hash, Default, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+struct ArcInfo {
+    index: FunctionIndex,
+    arc: usize,
+    count: Option<u64>,
+    attr: ArcAttr,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Default, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+struct BlockInfo {
+    index: FunctionIndex,
+    block: usize,
+    count: Option<u64>,
+    attr: BlockAttr,
+    lines: Vec<Line>,
+}
+
+impl BlockInfo {
+    fn is_entry_block(&self) -> bool {
+        self.block == 0
+    }
+
+    /// Iterate the filename and line numbers associated to a block.
+    fn iter_lines(&self) -> GraphLinesIter {
+        GraphLinesIter {
+            filename: UNKNOWN_SYMBOL,
+            iter: self.lines.iter(),
+        }
+    }
+}
+
+/// The iterator type returned from `Graph::iter_lines`.
+pub struct GraphLinesIter<'a> {
+    filename: Symbol,
+    iter: ::std::slice::Iter<'a, Line>,
+}
+
+impl<'a> Iterator for GraphLinesIter<'a> {
+    type Item = (Symbol, u32);
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.iter.next() {
+                Some(&Line::FileName(filename)) => self.filename = filename,
+                Some(&Line::LineNumber(ln)) => return Some((self.filename, ln)),
+                None => return None,
+            }
+        }
+    }
+}
+
+//}}}
+//----------------------------------------------------------------------------------------------------------------------
+//{{{ Auxiliary structures
+
+#[derive(Default, Debug, Clone)]
+struct FunctionInfo {
+    arcs: Vec<EdgeIndex>,
+    nodes: Vec<NodeIndex>,
+    source: Option<Source>,
+}
+
+impl FunctionInfo {
+    fn node(&self, block_index: BlockIndex) -> NodeIndex {
+        self.nodes[usize::from(block_index)]
+    }
+
+    /// Obtains the block index to the entry block of this function.
+    fn entry_block(&self) -> NodeIndex {
+        self.nodes[0]
+    }
+
+    /// Obtains the block index to the exit block of this function.
+    fn exit_block(&self, version: Version) -> NodeIndex {
+        let index = if version >= VERSION_4_7 {
+            1
+        } else {
+            self.nodes.len() - 1
+        };
+        self.nodes[index]
+    }
+}
+
+//}}}

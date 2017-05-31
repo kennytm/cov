@@ -1,0 +1,113 @@
+{% import "macros.html" as macros %}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Coverage report of {{ path | simplify_source_path(crate_path=crate_path) | escape }}</title>
+        <link rel="stylesheet" href="static/common.css" />
+    </head>
+    <body>
+        <p><a href="index.html">← Back</a></p>
+        <h1>{{ path | simplify_source_path(crate_path=crate_path) | escape }}</h1>
+        <h2>source</h2>
+        <table id="source">
+            <thead>
+                <tr>
+                    <th>Branches</th>
+                    <th>Cov</th>
+                    <th>Line</th>
+                    <th style="text-align:left;">Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in lines %}
+                    {% if line.count is number %}
+                        {% if line.count == 0 %}
+                            {% set cls = "zero" %}
+                        {% else %}
+                            {% set cls = "covered" %}
+                        {% endif %}
+                    {% else %}
+                        {% set cls = "skipped" %}
+                    {% endif %}
+                    <tr id="{{ line.line }}" class="ln-{{cls}}">
+                        <td>
+                            {% for branch in line.branches %}
+                                {% if branch.count == 0 %}
+                                    {% set cls = "zero" %}
+                                {% else %}
+                                    {% set cls = "covered" %}
+                                {% endif %}
+                                {% if branch.symbol != symbol %}
+                                    {% set direction = "ext" %}
+                                    {% set local = "ext" %}
+                                {% else %}
+                                    {% set local = "local" %}
+                                    {% if branch.line < line.line %}
+                                        {% set direction = "up" %}
+                                    {% elif branch.line == line.line %}
+                                        {% set direction = "same" %}
+                                    {% elif branch.line > line.line %}
+                                        {% set direction = "down" %}
+                                    {% endif %}
+                                {% endif %}
+                                {% if direction == "ext" and cls == "zero" %}
+                                    {% set icon = "◀︎" %}
+                                {% elif direction == "ext" and cls == "covered" %}
+                                    {% set icon = "◁" %}
+                                {% elif direction == "up" and cls == "zero" %}
+                                    {% set icon = "▲" %}
+                                {% elif direction == "up" and cls == "covered" %}
+                                    {% set icon = "△" %}
+                                {% elif direction == "same" and cls == "zero" %}
+                                    {% set icon = "▶︎" %}
+                                {% elif direction == "same" and cls == "covered" %}
+                                    {% set icon = "▷" %}
+                                {% elif direction == "down" and cls == "zero" %}
+                                    {% set icon = "▼" %}
+                                {% elif direction == "down" and cls == "covered" %}
+                                    {% set icon = "▽" %}
+                                {% endif %}
+                                <a class="br-{{cls}} br-{{local}}" href="{{branch.symbol}}.html#{{branch.line}}" data-branch-count="{{branch.count}}">{{icon}}</a>{%
+                            endfor %}
+                        </td>
+                        <td>{{ line.count }}</td>
+                        <td><a href="#{{line.line}}">{{ line.line }}</a></td>
+                        <td>{{ line.source | coalesce(default="/* EOF */") | escape }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <h2>functions</h2>
+        <table id="summary" class="sortable">
+            <thead>
+                <tr>
+                    <th style="text-align:left;">Function</th>
+                    <th title="Number of times the function is called">Calls</th>
+                    <th title="Percentage of function calls with normal return">Returns</th>
+                    <th title="Percentage of executed basic blocks">Blocks</th>
+                    <th title="Percentage of taken branches">Branches</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in functions %}
+                    {% if f.summary.entry_count == 0 %}
+                        {% set fn_cls = "zero" %}
+                    {% else %}
+                        {% set fn_cls = "covered" %}
+                    {% endif %}
+                    <tr class="ln-{{fn_cls}}">
+                        <td><a href="#{{ f.line }}" title="{{ f.name | escape }}">{{ f.name | demangle | escape }}</a></td>
+                        <td>{{ f.summary.entry_count }}</td>
+                        {{ macros::coverage_percent_cell(value=f.summary.exit_count, total=f.summary.entry_count, fair=0, good=0) }}
+                        {{ macros::coverage_percent_cell(value=f.summary.blocks_executed, total=f.summary.blocks_count, fair=75, good=90) }}
+                        {{ macros::coverage_percent_cell(value=f.summary.branches_taken, total=f.summary.branches_count, fair=50, good=75) }}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <script src="static/sortable.js"></script>
+        <script src="static/file.js"></script>
+    </body>
+</html>

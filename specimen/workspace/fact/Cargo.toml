@@ -1,0 +1,6 @@
+[package]
+name = "cov-specimen-workspace-fact"
+version = "0.1.0"
+authors = ["kennytm <kennytm@gmail.com>"]
+description = "Compute factorial very inefficiently"
+publish = false

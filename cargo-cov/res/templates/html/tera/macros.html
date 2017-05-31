@@ -1,0 +1,23 @@
+{% macro coverage_percent_cell(value, total, fair, good) %}
+    {% if total == 0 %}
+        {% set cls = "none" %}
+        {% set percent = "—" %}
+    {% elif value == total %}
+        {% set cls = "perfect" %}
+        {% set percent = "100.00" %}
+    {% elif value == 0 %}
+        {% set cls = "zero" %}
+        {% set percent = "0.00" %}
+    {% else %}
+        {% set p = 100 * value / total %}
+        {% set percent = p | clamp(min=0.01, max=99.99) | to_fixed(precision=2) %}
+        {% if p > good %}
+            {% set cls = "good" %}
+        {% elif p > fair %}
+            {% set cls = "fair" %}
+        {% else %}
+            {% set cls = "bad" %}
+        {% endif %}
+    {% endif %}
+    <td title="{{value}}/{{total}}" class="ch-{{cls}}">{{percent}}%</td>
+{% endmacro coverage_percent_cell %}

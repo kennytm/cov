@@ -1,0 +1,12 @@
+[package]
+name = "cov-specimen-workspace"
+version = "0.1.0"
+authors = ["kennytm <kennytm@gmail.com>"]
+description = "Test coverage report with workspace"
+publish = false
+
+[workspace]
+
+[dependencies]
+cov-specimen-workspace-fib = { path = "fib" }
+cov-specimen-workspace-fact = { path = "fact" }

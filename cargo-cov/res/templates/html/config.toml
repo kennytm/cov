@@ -1,0 +1,7 @@
+[summary]
+output = "index.html"
+template = "index.html"
+
+[files]
+output = "{{ symbol }}.html"
+template = "file.html"

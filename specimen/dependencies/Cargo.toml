@@ -1,0 +1,13 @@
+[package]
+name = "cov-specimen-dependencies"
+version = "0.1.0"
+authors = ["kennytm <kennytm@gmail.com>"]
+description = "Test coverage report for program with external dependencies"
+publish = false
+
+[workspace]
+
+[dependencies]
+lazy_static = "0.2"
+regex = "0.2"
+
