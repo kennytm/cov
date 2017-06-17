@@ -7,6 +7,7 @@ use std::ops::Add;
 
 /// Adds the `or_default` method to entry API.
 pub trait EntryExt<'a> {
+    /// Type of "Value" of a key-value pair in the Entry.
     type Value: 'a;
     /// Equivalent to `self.or_insert_with(Self::Value::default)`.
     fn or_default(self) -> &'a mut Self::Value;
@@ -34,7 +35,8 @@ pub fn fill_fixedbitset_with_ones(bitset: &mut FixedBitSet) {
         *b = !0;
     }
     if excess_bits != 0 {
-        *slice.last_mut().unwrap() = 0x7fff_ffff >> (31 - excess_bits);
+        let last_item = slice.last_mut().expect("non-empty bitset");
+        *last_item = 0x7fff_ffff >> (31 - excess_bits);
     }
 }
 

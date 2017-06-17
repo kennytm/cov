@@ -1,3 +1,11 @@
+//! Coverage report.
+//!
+//! The [`Report`] structure contains format-independent information about the coverage of every line and branch. It can
+//! be easily serialized via serde for human-readable report generation, or transformation to other format consumed by
+//! external services.
+//!
+//! [`Report`]: ./struct.Report.html
+
 #[cfg(feature = "serde")]
 use intern::{Interner, SerializeWithInterner};
 use intern::Symbol;
@@ -10,11 +18,13 @@ use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 
 derive_serialize_with_interner! {
-    /// A coverage report, generated from a Graph.
+    /// A coverage report, generated from a [`Graph`].
+    ///
+    /// [`Graph`]: ../graph/struct.Graph.html
     #[derive(Clone, PartialEq, Eq, Debug, Default)]
     #[cfg_attr(feature="serde", derive(Serialize))]
     pub struct Report {
-        /// Files of the report.
+        /// Files in the report.
         pub files: HashMap<Symbol, File>,
     }
 }
@@ -62,7 +72,9 @@ derive_serialize_with_interner! {
     #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
     #[cfg_attr(feature="serde", derive(Serialize))]
     pub struct Line {
-        /// Number of times this line is entered.
+        /// Number of times this line is executed.
+        ///
+        /// This is the number of times all branches targeting the basic block containing this line has been taken.
         pub count: u64,
 
         /// Attributes associated with this line.
@@ -74,7 +86,8 @@ derive_serialize_with_interner! {
 }
 
 derive_serialize_with_interner! {
-    #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
+    /// Coverage information about a branch.
+    #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
     #[cfg_attr(feature="serde", derive(Serialize))]
     pub struct Branch {
         /// Number of times this branch is taken.
@@ -86,16 +99,17 @@ derive_serialize_with_interner! {
         /// The target filename of this branch.
         pub filename: Symbol,
 
-        /// The line number of this branch. Zero if missing.
+        /// The line number of the target of this branch. Zero if missing.
         pub line: u32,
 
-        /// The column number of this branch. Zero if missing.
+        /// The column number of the target of this branch. Zero if missing.
         pub column: u32,
     }
 }
 
 derive_serialize_with_interner! {
-    #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
+    /// Coverage information about a function.
+    #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
     #[cfg_attr(feature="serde", derive(Serialize))]
     pub struct Function {
         /// Name of the function.
@@ -112,13 +126,14 @@ derive_serialize_with_interner! {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
+/// Statistical summary of a function.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct FunctionSummary {
     /// Number of basic blocks in the function (excluding the enter- and exit-blocks).
     pub blocks_count: usize,
 
-    /// Number of basic blocks that has been executed (have non-zero count).
+    /// Number of basic blocks that has been executed (having non-zero count).
     pub blocks_executed: usize,
 
     /// How many times the function is called.
@@ -137,10 +152,11 @@ pub struct FunctionSummary {
     pub branches_taken: usize,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
+/// Statistical summary of a file.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct FileSummary {
-    /// Number of lines that can be executed.
+    /// Number of lines that can be profiled.
     pub lines_count: usize,
 
     /// Number of lines that has been covered.

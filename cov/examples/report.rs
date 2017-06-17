@@ -4,7 +4,7 @@ extern crate cov;
 extern crate env_logger;
 extern crate serde_json;
 
-use cov::{Gcov, Graph, Interner, Result};
+use cov::{Gcov, Graph, Interner, Result, SerializeWithInterner};
 
 use std::env;
 use std::io::stdout;
@@ -23,6 +23,6 @@ fn run() -> Result<()> {
     graph.analyze();
 
     let coverage = graph.report();
-    serde_json::to_writer_pretty(stdout(), &interner.with(&coverage))?;
+    serde_json::to_writer_pretty(stdout(), &coverage.with_interner(&interner))?;
     Ok(())
 }

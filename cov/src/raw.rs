@@ -1,18 +1,16 @@
-//! The raw structures of a gcov file.
+//! The raw structures of a GCNO/GCDA file.
 
 use error::*;
 use intern::{Interner, Symbol};
 #[cfg(feature = "serde")]
 use intern::SerializeWithInterner;
 use reader::Reader;
-use utils::EntryExt;
 
 use byteorder::{BigEndian, ByteOrder};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use std::{fmt, u64};
-use std::cmp::{max, min};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -25,19 +23,38 @@ use std::str::FromStr;
 //{{{ Gcov & RecordIndex
 
 derive_serialize_with_interner! {
-    /// The raw file.
+    /// The GCNO/GCDA file content.
     #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-    #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     pub struct Gcov {
+        /// File type.
         pub ty: Type,
+        /// File version.
         pub version: Version,
-        pub checksum: u32,
+        /// The stamp value uniquely identifies a GCNO between consecutive compilations. The corresponding GCDA will
+        /// have the same stamp.
+        pub stamp: u32,
+        /// Vector of records.
         pub records: Vec<Record>,
     }
 }
 
 impl Gcov {
-    /// Parses the header of a file with file name, and creates a new gcov reader.
+    /// Parses the file with at the given path as GCNO/GCDA format.
+    ///
+    /// # Errors
+    ///
+    /// * Returns [`UnknownFileType`] if the file is not a in GCNO/GCDA format.
+    /// * Returns [`UnsupportedVersion`] if the GCNO/GCDA version is not supported by this crate.
+    /// * Returns [`UnknownTag`] if the GCNO/GCDA contains an unrecognized record tag.
+    /// * Returns [`FromUtf8`] if any string in the file is not UTF-8 encoded.
+    /// * Returns [`Io`] on I/O failure.
+    ///
+    /// [`UnknownFileType`]: ../error/enum.ErrorKind.html#variant.UnknownFileType
+    /// [`UnsupportedVersion`]: ../error/enum.ErrorKind.html#variant.UnsupportedVersion
+    /// [`UnknownTag`]: ../error/enum.ErrorKind.html#variant.UnknownTag
+    /// [`FromUtf8`]: ../error/enum.ErrorKind.html#variant.FromUtf8
+    /// [`Io`]: ../error/enum.ErrorKind.html#variant.Io
     pub fn open<P: AsRef<Path>>(p: P, interner: &mut Interner) -> Result<Gcov> {
         debug!("open gcov file {:?}", p.as_ref());
         Reader::new(BufReader::new(File::open(p)?), interner)?.parse()
@@ -48,13 +65,13 @@ impl Gcov {
 //----------------------------------------------------------------------------------------------------------------------
 //{{{ Type
 
-/// The file type.
+/// File type.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Type {
-    /// The "notes" file, with file extension `*.gcno`.
+    /// The GCNO (**gc**ov **no**tes) file, with file extension `*.gcno`.
     Gcno,
-    /// The "data" file, with file extension `*.gcda`.
+    /// The GCDA (**gc**ov **da**ta) file, with file extension `*.gcda`.
     Gcda,
 }
 
@@ -71,24 +88,24 @@ impl fmt::Display for Type {
 //----------------------------------------------------------------------------------------------------------------------
 //{{{ Tag
 
-/// The tag of a record.
+/// Tag of a record.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Tag(pub u32);
 
 /// The tag for the end of file.
 pub const EOF_TAG: Tag = Tag(0);
-/// The tag for an `ANNOUNCE_FUNCTION` record.
+/// The tag for an [`ANNOUNCE_FUNCTION` record](./struct.Function.html).
 pub const FUNCTION_TAG: Tag = Tag(0x01_00_00_00);
-/// The tag for a `BASIC_BLOCK` record.
+/// The tag for a [`BASIC_BLOCK` record](./struct.Blocks.html).
 pub const BLOCKS_TAG: Tag = Tag(0x01_41_00_00);
-/// The tag for an `ARCS` record.
+/// The tag for an [`ARCS` record](./struct.Arcs.html).
 pub const ARCS_TAG: Tag = Tag(0x01_43_00_00);
-/// The tag for a `LINES` record.
+/// The tag for a [`LINES` record](./struct.Lines.html).
 pub const LINES_TAG: Tag = Tag(0x01_45_00_00);
-/// The tag for an `ARC_COUNTS` record.
+/// The tag for a [`COUNTS` record](./struct.ArcCounts.html).
 pub const COUNTER_BASE_TAG: Tag = Tag(0x01_a1_00_00);
-/// The tag for a `SUMMARY` record.
+/// The tag for a [`SUMMARY` record](./struct.Summary.html).
 pub const OBJECT_SUMMARY_TAG: Tag = Tag(0xa1_00_00_00);
 /// The tag for a program-`SUMMARY` record, which has been deprecated and is always skipped when present.
 pub const PROGRAM_SUMMARY_TAG: Tag = Tag(0xa3_00_00_00);
@@ -134,13 +151,19 @@ pub struct Version(u32);
 /// An invalid file version.
 pub const INVALID_VERSION: Version = Version(0);
 
-/// The file is targeting gcc 4.7. In this version the gcov format is modified in an incompatible way.
+/// GCNO/GCDA version targeting gcc 4.7.
+///
+/// Starting from this version the gcov format is modified in an incompatible way.
 pub const VERSION_4_7: Version = Version(0x34_30_37_2a);
 
 impl Version {
     /// Converts a raw version number to a `Version` structure.
     ///
-    /// Returns `Err(UnsupportedVersion)` if the version is not supported by this crate.
+    /// # Errors
+    ///
+    /// Returns [`UnsupportedVersion`] if the version is not supported by this crate.
+    ///
+    /// [`UnsupportedVersion`]: ../error/enum.ErrorKind.html#variant.UnsupportedVersion
     pub fn try_from(raw_version: u32) -> Result<Version> {
         ensure!(raw_version & 0x80_80_80_ff == 0x2a, ErrorKind::UnsupportedVersion(raw_version));
         Ok(Version(raw_version))
@@ -198,11 +221,17 @@ impl<'de> Deserialize<'de> for Version {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Record {
+    /// An `ANNOUNCE_FUNCTION` record in GCNO and GCDA formats.
     Function(Ident, Function),
+    /// A `BASIC_BLOCK` record in GCNO format.
     Blocks(Blocks),
+    /// An `ARCS` record in GCNO format.
     Arcs(Arcs),
+    /// A `LINES` record in GCNO format.
     Lines(Lines),
+    /// A `COUNTS` record in GCDA format.
     ArcCounts(ArcCounts),
+    /// A `SUMMARY` record in GCDA format.
     Summary(Summary),
 }
 
@@ -214,7 +243,7 @@ impl SerializeWithInterner for Record {
                 use serde::ser::SerializeTupleVariant;
                 let mut state = serializer.serialize_tuple_variant("Record", 0, "Function", 2)?;
                 state.serialize_field(ident)?;
-                state.serialize_field(&interner.with(function))?;
+                state.serialize_field(&function.with_interner(interner))?;
                 state.end()
             },
             Record::Lines(ref lines) => serializer.serialize_newtype_variant("Record", 3, "Lines", lines),
@@ -228,19 +257,22 @@ impl SerializeWithInterner for Record {
 //{{{ Function, Ident & Source
 
 derive_serialize_with_interner! {
-    /// A function.
-    #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
-    #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
+    /// Information of a function.
+    #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     pub struct Function {
+        /// The line-number checksum of this function.
         pub lineno_checksum: u32,
-        #[cfg_attr(feature="serde", serde(default, skip_serializing_if="Option::is_none"))]
-        pub cfg_checksum: Option<u32>,
-        #[cfg_attr(feature="serde", serde(default, skip_serializing_if="Option::is_none"))]
+        /// The configuration checksum of this function. On versions before 4.7, this value is always 0.
+        pub cfg_checksum: u32,
+        /// The source location of this function. This field is `None` in a GCDA.
+        #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
         pub source: Option<Source>,
     }
 }
 
-/// Function identifier.
+/// Function identifier. The identifier is used to match between two `ANNOUNCE_FUNCTION` records between the GCNO and
+/// GCDA. The identifier is not necessarily sequential.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ident(pub u32);
@@ -258,7 +290,7 @@ impl fmt::Display for Ident {
 }
 
 derive_serialize_with_interner! {
-    /// Source information of a file.
+    /// Source location of a function.
     #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
     #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
     pub struct Source {
@@ -294,6 +326,13 @@ macro_rules! derive_serde_for_attr {
         }
 
         impl $flags {
+            /// Converts an integer read from GCNO to this attribute.
+            ///
+            /// # Errors
+            ///
+            /// Returns [`UnsupportedAttr`] if the GCNO flag is unrecognized.
+            ///
+            /// [`UnsupportedAttr`]: ../error/enum.ErrorKind.html#variant.UnsupportedAttr
             pub fn from_gcno(flags: u32) -> Result<$flags> {
                 ensure!(flags & !($allowed_from_gcno.bits() as u32) == 0, ErrorKind::UnsupportedAttr($kind, flags));
                 Ok(<$flags>::from_bits_truncate(flags as u16))
@@ -302,23 +341,33 @@ macro_rules! derive_serde_for_attr {
     }
 }
 
-/// List of basic blocks.
+/// List of [basic blocks](https://en.wikipedia.org/wiki/Basic_block).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Blocks {
+    /// The attributes for each block, in sequence.
     pub flags: Vec<BlockAttr>,
 }
 
 bitflags! {
-    /// Attributes about a block.
+    /// Attributes about a [basic block](https://en.wikipedia.org/wiki/Basic_block).
     #[derive(Default)]
     pub struct BlockAttr: u16 {
-        // This one must be consistent with GCNO.
+        /// The block is unexpected.
+        ///
+        /// Equivalent to the `GCOV_BLOCK_UNEXPECTED` flag.
         const BLOCK_ATTR_UNEXPECTED = 2;
 
+        /// The block ends with a function call which may throw an exception.
         const BLOCK_ATTR_CALL_SITE = 0x1000;
+
+        /// The block starts with the return from a function call.
         const BLOCK_ATTR_CALL_RETURN = 0x2000;
+
+        /// The block is the landing pad for `longjmp`.
         const BLOCK_ATTR_NONLOCAL_RETURN = 0x4000;
+
+        /// The block starts as a catch block.
         const BLOCK_ATTR_EXCEPTIONAL = 0x8000;
     }
 }
@@ -327,7 +376,9 @@ derive_serde_for_attr! {
     BlockAttr, "block", BLOCK_ATTR_UNEXPECTED
 }
 
-/// Index to a block in the basic blocks list.
+/// Index to a block the [`Blocks`].
+///
+/// [`Blocks`]: ./struct.Blocks.html
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct BlockIndex(pub u32);
@@ -348,26 +399,49 @@ impl From<BlockIndex> for usize {
 //----------------------------------------------------------------------------------------------------------------------
 //{{{ Arcs
 
-/// List of arcs (out-going edges) from a single source.
+/// List of arcs (out-going edges) from a single basic block.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Arcs {
+    /// The predecessor basic block of this collection of arcs.
     pub src_block: BlockIndex,
+    /// The arcs going out from the `src_block`.
     pub arcs: Vec<Arc>,
 }
 
 bitflags! {
-    /// Attributes about an arc.
+    /// Attributes about an [`Arc`].
+    ///
+    /// [`Arc`]: ./struct.Arc.html
     #[derive(Default)]
     pub struct ArcAttr: u16 {
-        // These three must be consistent with GCNO.
+        /// The arc is a non-instrumentable edge on the spanning tree. This arc will not appear in the corresponding
+        /// GCDA file.
+        ///
+        /// Equivalent to the `GCOV_ARC_ON_TREE` flag.
         const ARC_ATTR_ON_TREE = 1;
+
+        /// The arc is fake. Such arcs connect no-return blocks (e.g. infinite loop and `-> !` functions) to the exit
+        /// block, i.e. in reality this arc should never be taken.
+        ///
+        /// Equivalent to the `GCOV_ARC_FAKE` flag.
         const ARC_ATTR_FAKE = 2;
+
+        /// The arc is fall-through.
+        ///
+        /// Equivalent to the `GCOV_ARC_FALLTHROUGH` flag.
         const ARC_ATTR_FALLTHROUGH = 4;
 
+        /// The arc is taken to a `catch` handler.
         const ARC_ATTR_THROW = 0x10;
+
+        /// The arc is for a function that abnormally returns.
         const ARC_ATTR_CALL_NON_RETURN = 0x20;
+
+        /// The arc is for `setjmp`.
         const ARC_ATTR_NONLOCAL_RETURN = 0x40;
+
+        /// The arc is an unconditional branch.
         const ARC_ATTR_UNCONDITIONAL = 0x80;
     }
 }
@@ -376,11 +450,16 @@ derive_serde_for_attr! {
     ArcAttr, "arc", ARC_ATTR_ON_TREE | ARC_ATTR_FAKE | ARC_ATTR_FALLTHROUGH
 }
 
-/// An arc destination.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+/// An arc.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Arc {
+    /// The destination basic block of the arc. The source is in the [`Arcs`] structure.
+    ///
+    /// [`Arcs`]: ./struct.Arcs.html
     pub dest_block: BlockIndex,
+
+    /// The attribute of this arc.
     pub flags: ArcAttr,
 }
 
@@ -393,16 +472,24 @@ derive_serialize_with_interner! {
     #[derive(Clone, PartialEq, Eq, Hash, Debug)]
     #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
     pub struct Lines {
+        /// The basic block which contains these source information.
         pub block_number: BlockIndex,
+        /// The line numebers. The vector typically starts with a [`FileName`], followed by many [`LineNumber`]s.
+        ///
+        /// [`FileName`]: ./enum.Line.html#variant.FileName
+        /// [`LineNumber`]: ./enum.Line.html#variant.LineNumber
         pub lines: Vec<Line>,
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+/// A source line entry of a basic block.
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(untagged))]
 pub enum Line {
+    /// A line number inside the basic block.
     LineNumber(u32),
+    /// The file name containing the basic block.
     FileName(Symbol),
 }
 
@@ -429,10 +516,13 @@ impl SerializeWithInterner for Line {
 //----------------------------------------------------------------------------------------------------------------------
 //{{{ ArcCounts
 
-/// Counter of how many times an arc is hit.
+/// Counter of how many times an arc is taken. Only arcs without the [`ARC_ATTR_ON_TREE`] flag will be recorded.
+///
+/// [`ARC_ATTR_ON_TREE`]: ./constant.ARC_ATTR_ON_TREE.html
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ArcCounts {
+    /// How many times an arc is taken. The vector lists the counts for each arc.
     pub counts: Vec<u64>,
 }
 
@@ -444,27 +534,45 @@ pub struct ArcCounts {
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Summary {
+    /// Checksum of the object.
     pub checksum: u32,
+    /// Number of counters.
     pub num: u32,
+    /// Number of program runs.
     pub runs: u32,
+    /// Sum of all counters accumulated.
     pub sum: u64,
+    /// Maximum count of a single run.
     pub max: u64,
+    /// Sum of individual maximum counts.
     pub sum_max: u64,
+    /// Histogram of counter values.
     pub histogram: Option<Histogram>,
 }
 
-/// Histogram in the program summary.
+/// Histogram in the [`Summary`].
+///
+/// [`Summary`]: ./struct.Summary.html
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Histogram {
+    /// Buckets in the histogram.
+    ///
+    /// The key gives the scale-index.
     pub buckets: BTreeMap<u32, HistogramBucket>,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+/// A bucket in the [`Histogram`].
+///
+/// [`Histogram`]: ./struct.Histogram.html
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct HistogramBucket {
+    /// Number of counters whose profile count falls within the bucket.
     pub num: u32,
+    /// Smallest profile count included in this bucket.
     pub min: u64,
+    /// Cumulative value of the profile counts in this bucket.
     pub sum: u64,
 }
 
@@ -475,44 +583,6 @@ impl Default for HistogramBucket {
             min: u64::MAX,
             sum: 0,
         }
-    }
-}
-
-impl Summary {
-    /// Merges another summary to here.
-    pub fn merge(&mut self, other: &Summary) -> Result<()> {
-        if self.checksum == 0 {
-            self.checksum = other.checksum;
-        } else if self.checksum != other.checksum {
-            bail!(ErrorKind::ChecksumMismatch("summary"));
-        }
-
-        if self.runs == 0 {
-            self.num = other.num;
-        }
-
-        self.runs += other.runs;
-        self.sum += other.sum;
-        self.max = max(self.max, other.max);
-        self.sum_max += other.sum_max;
-
-        if let Some(ref other_hist) = other.histogram {
-            match self.histogram {
-                None => {
-                    self.histogram = Some(other_hist.clone());
-                },
-                Some(ref mut hist) => {
-                    for (key, value) in &other_hist.buckets {
-                        let existing = hist.buckets.entry(*key).or_default();
-                        existing.num = value.num;
-                        existing.min = min(existing.min, value.min);
-                        existing.sum += value.sum;
-                    }
-                },
-            }
-        }
-
-        Ok(())
     }
 }
 

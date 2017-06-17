@@ -1,4 +1,5 @@
-//! Collect the flat gcov statistics into a control-flow graph with edge count.
+//! Combine the raw coverage statistics into a single control-flow graph, and perform analysis to obtain a coverage
+//! report.
 
 use error::*;
 use intern::{Symbol, UNKNOWN_SYMBOL};
@@ -18,8 +19,7 @@ use std::ops::{Index, IndexMut};
 //----------------------------------------------------------------------------------------------------------------------
 //{{{ Graph
 
-/// A counter graph. The graph records how many times an edge branching from one basic-block to
-/// another is hit.
+/// The combined control-flow graph.
 #[derive(Default, Debug, Clone)]
 pub struct Graph {
     version: Version,
@@ -29,7 +29,24 @@ pub struct Graph {
 }
 
 impl Graph {
-    /// Merges a `*.gcno` or `*.gcda` file into the graph.
+    /// Creates a new graph.
+    pub fn new() -> Graph {
+        Graph::default()
+    }
+
+    /// Merges a parsed GCNO/GCDA into the graph.
+    ///
+    /// # Errors
+    ///
+    /// * Returns [`VersionMismatch`] if a file has a different version than the previous ones merged.
+    /// * Returns [`DuplicatedFunction`] if the same function is merged twice.
+    /// * Returns [`MissingFunction`] if a function referred in a GCDA does not exist in the graph.
+    /// * Returns [`CountsMismatch`] if the number of profiled arcs in a GCDA does not match the corresponding GCNO.
+    ///
+    /// [`VersionMismatch`]: ../error/enum.ErrorKind.html#variant.VersionMismatch
+    /// [`DuplicatedFunction`]: ../error/enum.ErrorKind.html#variant.DuplicatedFunction
+    /// [`MissingFunction`]: ../error/enum.ErrorKind.html#variant.MissingFunction
+    /// [`CountsMismatch`]: ../error/enum.ErrorKind.html#variant.MissingFunction
     pub fn merge(&mut self, gcov: Gcov) -> Result<()> {
         match self.version {
             INVALID_VERSION => self.version = gcov.version,
@@ -41,16 +58,23 @@ impl Graph {
         }
     }
 
+    /// Merges a parsed GCNO into the graph.
+    ///
+    /// # Errors
+    ///
+    /// * Returns [`DuplicatedFunction`] if the same function is merged twice.
+    ///
+    /// [`DuplicatedFunction`]: ../error/enum.ErrorKind.html#variant.DuplicatedFunction
     fn merge_gcno(&mut self, gcno: Gcov) -> Result<()> {
         let mut cur = INVALID_FUNCTION_INDEX;
-        let checksum = gcno.checksum;
+        let checksum = gcno.stamp;
 
         for record in gcno.records {
             match record {
                 Record::Function(ident, function) => cur = self.add_function(checksum, ident, function)?,
-                Record::Blocks(blocks) => self.add_blocks(cur, blocks)?,
-                Record::Arcs(arcs) => self.add_arcs(cur, arcs)?,
-                Record::Lines(lines) => self.add_lines(cur, lines)?,
+                Record::Blocks(blocks) => self.add_blocks(cur, blocks),
+                Record::Arcs(arcs) => self.add_arcs(cur, arcs),
+                Record::Lines(lines) => self.add_lines(cur, lines),
                 _ => trace!("gcno-unknown-record: {:?}", record),
             }
         }
@@ -58,11 +82,18 @@ impl Graph {
         Ok(())
     }
 
-    /// Merges the statistics from a parsed `*.gcda` file into the graph. The counts are increased
-    /// accordingly.
+    /// Merges a parsed GCDA into the graph.
+    ///
+    /// # Errors
+    ///
+    /// * Returns [`MissingFunction`] if a function does not exist in the graph.
+    /// * Returns [`CountsMismatch`] if the number of profiled arcs does not match the corresponding GCNO.
+    ///
+    /// [`MissingFunction`]: ../error/enum.ErrorKind.html#variant.MissingFunction
+    /// [`CountsMismatch`]: ../error/enum.ErrorKind.html#variant.CountsMismatch
     fn merge_gcda(&mut self, gcda: Gcov) -> Result<()> {
         let mut cur = INVALID_FUNCTION_INDEX;
-        let checksum = gcda.checksum;
+        let checksum = gcda.stamp;
 
         for record in gcda.records {
             match record {
@@ -74,6 +105,24 @@ impl Graph {
         }
 
         Ok(())
+    }
+
+    /// Analyzes the graph.
+    ///
+    /// This should be called *after* all GCNO/GCDAs are [merged](#method.merge) and *before* a [report](#method.report)
+    /// is generated.
+    ///
+    /// This method mainly converts the raw arc counts (branch coverage) to block counts (line coverage). If this is not
+    /// called, the report will be empty.
+    pub fn analyze(&mut self) {
+        self.mark_catch_blocks();
+        self.mark_unconditional_arcs();
+        self.mark_exceptional_blocks();
+        self.propagate_counts();
+        if cfg!(debug_assertions) {
+            self.verify_counts();
+        }
+        self.mark_exceptional_blocks();
     }
 
     /// Obtains a coverage report from the graph.
@@ -123,7 +172,7 @@ impl Graph {
                     return None;
                 }
                 let arc_taken = arc.count > Some(0);
-                let src = graph.edge_endpoints(ei).unwrap().0;
+                let src = graph.edge_endpoints(ei).expect("valid edge").0;
                 let src_executed = graph[src].count > Some(0);
                 Some((1, src_executed as usize, arc_taken as usize))
             })
@@ -223,7 +272,7 @@ struct FunctionIdentity {
     file_checksum: u32,
     ident: Ident,
     lineno_checksum: u32,
-    cfg_checksum: Option<u32>,
+    cfg_checksum: u32,
 }
 
 impl FunctionIdentity {
@@ -242,18 +291,6 @@ impl FunctionIdentity {
 //{{{ GraphBase analyze
 
 impl Graph {
-    /// Analyzes the graph to identify additional attributes of blocks.
-    pub fn analyze(&mut self) {
-        self.mark_catch_blocks();
-        self.mark_unconditional_arcs();
-        self.mark_exceptional_blocks();
-        self.propagate_counts();
-        if cfg!(debug_assertions) {
-            self.verify_counts();
-        }
-        self.mark_exceptional_blocks();
-    }
-
     /// Marks blocks and arc with attributes associated with throwing exceptions.
     fn mark_catch_blocks(&mut self) {
         let graph = &mut self.graph;
@@ -404,7 +441,7 @@ impl Graph {
         } else {
             return BlockColor::White;
         };
-        self.graph.node_weight_mut(ni).unwrap().count = Some(total);
+        self.graph[ni].count = Some(total);
         BlockColor::Green
     }
 
@@ -477,7 +514,12 @@ impl Graph {
         }
     }
 
+    /// Marks blocks as exceptional.
     fn mark_exceptional_blocks(&mut self) {
+        fn is_non_exc_edge(er: EdgeReference<ArcInfo>) -> bool {
+            !er.weight().attr.intersects(ARC_ATTR_FAKE | ARC_ATTR_THROW)
+        }
+
         let mut stack = Vec::with_capacity(self.functions.len());
         for (i, block) in self.graph.node_weights_mut().enumerate() {
             if block.is_entry_block() {
@@ -487,7 +529,7 @@ impl Graph {
             }
         }
 
-        let mut dfs = Dfs::empty(&EdgeFiltered(&self.graph, |er: EdgeReference<ArcInfo>| !er.weight().attr.intersects(ARC_ATTR_FAKE | ARC_ATTR_THROW)));
+        let mut dfs = Dfs::empty(&EdgeFiltered(&self.graph, is_non_exc_edge));
         dfs.stack = stack;
 
         while let Some(non_exc_ni) = dfs.next(&self.graph) {
@@ -528,15 +570,8 @@ macro_rules! get_function {
     ($self:expr, $index:expr) => { &mut $self.functions[$index.0] }
 }
 
-fn ensure_eq_or_zero(kind: &'static str, lhs: usize, rhs: usize) -> Result<bool> {
-    if lhs == 0 || lhs == rhs {
-        Ok(lhs == 0)
-    } else {
-        Err(ErrorKind::CountsMismatch(kind, Type::Gcno, lhs, rhs).into())
-    }
-}
-
 impl Graph {
+    /// Adds a GCNO function record to the graph.
     fn add_function(&mut self, checksum: u32, ident: Ident, function: Function) -> Result<FunctionIndex> {
         let new_index = FunctionIndex(self.functions.len());
         trace!("gcno-add-function #{}@{}: {:?} -> {:?}", ident, checksum, function, new_index);
@@ -552,73 +587,89 @@ impl Graph {
         Ok(new_index)
     }
 
-    fn add_blocks(&mut self, index: FunctionIndex, blocks: Blocks) -> Result<()> {
+    /// Adds a GCNO block list to the graph.
+    fn add_blocks(&mut self, index: FunctionIndex, blocks: Blocks) {
         let count = blocks.flags.len();
         trace!("gcno-add-blocks ({}): {} blocks", index.0, count);
 
         let function = get_function!(self, index);
-        if ensure_eq_or_zero("blocks", function.nodes.len(), blocks.flags.len())? {
-            let graph = &mut self.graph;
-            function.nodes = blocks
-                .flags
-                .iter()
-                .enumerate()
-                .map(move |(block, &attr)| {
-                    graph.add_node(BlockInfo {
-                        index,
-                        block,
-                        attr,
-                        count: None,
-                        lines: Vec::new(),
-                    })
+
+        // add_function() should ensure the function is empty.
+        debug_assert!(function.nodes.is_empty());
+
+        let graph = &mut self.graph;
+        function.nodes = blocks
+            .flags
+            .iter()
+            .enumerate()
+            .map(move |(block, &attr)| {
+                graph.add_node(BlockInfo {
+                    index,
+                    block,
+                    attr,
+                    count: None,
+                    lines: Vec::new(),
                 })
-                .collect();
-        }
-        Ok(())
+            })
+            .collect();
     }
 
-    fn add_arcs(&mut self, index: FunctionIndex, arcs: Arcs) -> Result<()> {
+    /// Adds a GCNO arcs list for a block to the graph.
+    fn add_arcs(&mut self, index: FunctionIndex, arcs: Arcs) {
         trace!("gcno-add-arcs ({}): {:?} -> {} dests", index.0, arcs.src_block, arcs.arcs.len());
 
         let function = get_function!(self, index);
         let src_ni = function.node(arcs.src_block);
-        if ensure_eq_or_zero("arcs", self.graph.neighbors(src_ni).count(), arcs.arcs.len())? {
-            for (local_arc_index, arc) in arcs.arcs.iter().enumerate() {
-                let dest_ni = function.node(arc.dest_block);
 
-                let is_real_arc = !arc.flags.contains(ARC_ATTR_ON_TREE);
-                let arc_info = ArcInfo {
-                    index,
-                    arc: local_arc_index,
-                    count: if is_real_arc { Some(0) } else { None },
-                    attr: arc.flags,
-                };
-                let ei = self.graph.add_edge(src_ni, dest_ni, arc_info);
-                if is_real_arc {
-                    function.arcs.push(ei);
-                }
+        // add_function() should ensure the function is empty and thus the block had no arcs.
+        debug_assert!(self.graph.neighbors(src_ni).next().is_none());
+
+        for (local_arc_index, arc) in arcs.arcs.iter().enumerate() {
+            let dest_ni = function.node(arc.dest_block);
+
+            let is_real_arc = !arc.flags.contains(ARC_ATTR_ON_TREE);
+            let arc_info = ArcInfo {
+                index,
+                arc: local_arc_index,
+                count: if is_real_arc { Some(0) } else { None },
+                attr: arc.flags,
+            };
+            let ei = self.graph.add_edge(src_ni, dest_ni, arc_info);
+            if is_real_arc {
+                function.arcs.push(ei);
             }
         }
-        Ok(())
     }
 
-    fn add_lines(&mut self, index: FunctionIndex, lines: Lines) -> Result<()> {
+    /// Adds a GCNO source lines list for a block to the graph.
+    fn add_lines(&mut self, index: FunctionIndex, lines: Lines) {
         trace!("gcno-add-lines ({}): {:?} -> {} lines", index.0, lines.block_number, lines.lines.len());
         let function = get_function!(self, index);
         let ni = function.node(lines.block_number);
-        let block = self.graph.node_weight_mut(ni).unwrap();
-        if ensure_eq_or_zero("lines", block.lines.len(), lines.lines.len())? {
-            block.lines = lines.lines;
-        }
-        Ok(())
+        let block = &mut self.graph[ni];
+
+        // add_function() should ensure the function is empty and thus the block had no source info.
+        debug_assert!(block.lines.is_empty());
+
+        block.lines = lines.lines;
     }
 
+    /// Finds a function given its identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MissingFunction` if not found.
     fn find_function(&self, checksum: u32, ident: Ident, function: Function) -> Result<FunctionIndex> {
         trace!("gcda-function #{}@{}: {:?}", ident, checksum, function);
         let identity = FunctionIdentity::new(checksum, ident, &function);
         self.index.get(&identity).cloned().ok_or_else(|| ErrorKind::MissingFunction(checksum, ident).into())
     }
 
+    /// Adds the arc counts statistics from a GCDA.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CountsMismatch` if the number of arcs does not match the corresponding GCNO.
     fn add_arc_counts(&mut self, index: FunctionIndex, ac: ArcCounts) -> Result<()> {
         trace!("gcda-arc-counts ({}): {:?}", index.0, ac);
         let function = get_function!(self, index);
@@ -638,6 +689,7 @@ impl Graph {
 //----------------------------------------------------------------------------------------------------------------------
 //{{{ ArcInfo
 
+/// Arc information for analysis.
 #[derive(Clone, PartialEq, Eq, Hash, Default, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct ArcInfo {
@@ -647,6 +699,7 @@ struct ArcInfo {
     attr: ArcAttr,
 }
 
+/// Block information for analysis.
 #[derive(Clone, PartialEq, Eq, Hash, Default, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct BlockInfo {
@@ -658,26 +711,27 @@ struct BlockInfo {
 }
 
 impl BlockInfo {
+    /// Whether the block is an entry block.
     fn is_entry_block(&self) -> bool {
         self.block == 0
     }
 
     /// Iterate the filename and line numbers associated to a block.
-    fn iter_lines(&self) -> GraphLinesIter {
-        GraphLinesIter {
+    fn iter_lines(&self) -> IterLines {
+        IterLines {
             filename: UNKNOWN_SYMBOL,
             iter: self.lines.iter(),
         }
     }
 }
 
-/// The iterator type returned from `Graph::iter_lines`.
-pub struct GraphLinesIter<'a> {
+/// The iterator type returned from `BlockInfo::iter_lines`.
+struct IterLines<'a> {
     filename: Symbol,
     iter: ::std::slice::Iter<'a, Line>,
 }
 
-impl<'a> Iterator for GraphLinesIter<'a> {
+impl<'a> Iterator for IterLines<'a> {
     type Item = (Symbol, u32);
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -694,6 +748,7 @@ impl<'a> Iterator for GraphLinesIter<'a> {
 //----------------------------------------------------------------------------------------------------------------------
 //{{{ Auxiliary structures
 
+/// Function information.
 #[derive(Default, Debug, Clone)]
 struct FunctionInfo {
     arcs: Vec<EdgeIndex>,
@@ -702,6 +757,7 @@ struct FunctionInfo {
 }
 
 impl FunctionInfo {
+    /// Converts the raw block index into the node index of the graph.
     fn node(&self, block_index: BlockIndex) -> NodeIndex {
         self.nodes[usize::from(block_index)]
     }

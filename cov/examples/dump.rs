@@ -4,7 +4,7 @@ extern crate cov;
 extern crate env_logger;
 extern crate serde_json;
 
-use cov::{Gcov, Interner, Result};
+use cov::{Gcov, Interner, Result, SerializeWithInterner};
 
 use std::env;
 use std::io::stdout;
@@ -17,6 +17,6 @@ fn run() -> Result<()> {
     let filename = env::args_os().nth(1).expect("filename");
     let mut interner = Interner::new();
     let parsed = Gcov::open(filename, &mut interner)?;
-    serde_json::to_writer_pretty(stdout(), &interner.with(&parsed))?;
+    serde_json::to_writer_pretty(stdout(), &parsed.with_interner(&interner))?;
     Ok(())
 }
