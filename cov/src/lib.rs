@@ -94,3 +94,4 @@ pub use intern::{Interner, Symbol};
 pub use intern::SerializeWithInterner;
 pub use raw::Gcov;
 pub use report::Report;
+pub use utils::IntoStringLossy;

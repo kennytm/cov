@@ -8,6 +8,7 @@
 use error::*;
 use intern::{Interner, Symbol, UNKNOWN_SYMBOL};
 use raw::*;
+use utils::IntoStringLossy;
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 
@@ -156,20 +157,17 @@ impl<'si, R: Read> Reader<'si, R> {
     /// # Errors
     ///
     /// * Returns [`Io`] on I/O failure, e.g. reaching end-of-file.
-    /// * Returns [`FromUtf8`] if the string is not encoded in UTF-8.
     ///
     /// [`Io`]: ../error/enum.ErrorKind.html#variant.Io
-    /// [`FromUtf8`]: ../error/enum.ErrorKind.html#variant.FromUtf8
     fn read_string(&mut self) -> Result<Symbol> {
         let length = (self.read_32()? as u64) * 4;
         let mut buf = Vec::with_capacity(length as usize);
-        let cursor = self.cursor;
         let value = self.reader.by_ref().take(length).read_to_end(&mut buf);
         let _ = self.advance_cursor(length, value)?;
         let actual_length = buf.iter().rposition(|b| *b != 0).unwrap_or(!0).wrapping_add(1);
         buf.truncate(actual_length);
-        let string = Location::Cursor(cursor).wrap(|| String::from_utf8(buf))?;
-        Ok(self.interner.intern(string.into_boxed_str()))
+        let string = buf.into_string_lossy().into_boxed_str();
+        Ok(self.interner.intern(string))
     }
 
     /// Reads something from this reader using the provided function `f`, until end-of-file is encountered.
@@ -226,12 +224,10 @@ impl<'si, R: Read> Reader<'si, R> {
     /// # Errors
     ///
     /// * Returns [`UnknownTag`] if the GCNO/GCDA contains an unrecognized record tag.
-    /// * Returns [`FromUtf8`] if any string in the file is not UTF-8 encoded.
     /// * Returns [`Io`] on I/O failure.
     ///
     /// [`Gcov`]: ../raw/struct.Gcov.html
     /// [`UnknownTag`]: ../error/enum.ErrorKind.html#variant.UnknownTag
-    /// [`FromUtf8`]: ../error/enum.ErrorKind.html#variant.FromUtf8
     /// [`Io`]: ../error/enum.ErrorKind.html#variant.Io
     pub fn parse(&mut self) -> Result<Gcov> {
         let records = self.until_eof(|s| {
@@ -293,10 +289,8 @@ impl<'si, R: Read> Reader<'si, R> {
     ///
     /// # Errors
     ///
-    /// * Returns [`FromUtf8`] if the file name or function name is not UTF-8 encoded.
     /// * Returns [`Io`] on I/O failure.
     ///
-    /// [`FromUtf8`]: ../error/enum.ErrorKind.html#variant.FromUtf8
     /// [`Io`]: ../error/enum.ErrorKind.html#variant.Io
     fn parse_function(&mut self) -> Result<(Ident, Function)> {
         trace!("function-ident @ 0x{:x}", self.cursor);
@@ -340,10 +334,8 @@ impl<'si, R: Read> Reader<'si, R> {
     ///
     /// # Errors
     ///
-    /// * Returns [`FromUtf8`] if the file name or function name is not UTF-8 encoded.
     /// * Returns [`Io`] on I/O failure.
     ///
-    /// [`FromUtf8`]: ../error/enum.ErrorKind.html#variant.FromUtf8
     /// [`Io`]: ../error/enum.ErrorKind.html#variant.Io
     fn read_source(&mut self) -> Result<Source> {
         trace!("source-name @ 0x{:x}", self.cursor);

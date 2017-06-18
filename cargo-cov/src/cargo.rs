@@ -3,6 +3,7 @@ use error::{ErrorKind, Result};
 use lookup::*;
 use utils::{OptionExt, clean_dir};
 
+use cov::IntoStringLossy;
 use serde_json::from_reader;
 
 use std::borrow::Cow;
@@ -57,7 +58,7 @@ impl<'a> Cargo<'a> {
                 (Cow::Owned(p), Cow::Owned(n))
             },
         };
-        let profiler_lib_path = canonicalize(profiler_lib_path)?.to_string_lossy().into_owned();
+        let profiler_lib_path = canonicalize(profiler_lib_path)?.into_string_lossy();
 
         Ok(Cargo {
             cargo_path,

@@ -9,12 +9,10 @@ use std::{fmt, io};
 use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::result::Result as StdResult;
-use std::string::FromUtf8Error;
 
 error_chain! {
     foreign_links {
         Io(io::Error) /** Wrapper of standard I/O error. */;
-        FromUtf8(FromUtf8Error) /** Wrapper of UTF-8 decode error. */;
         Json(::serde_json::Error) #[cfg(feature="serde_json")] /** Wrapper of JSON error. */;
     }
 
@@ -173,11 +171,5 @@ impl IsEof for Error {
 impl IsEof for io::Error {
     fn is_eof(&self) -> bool {
         self.kind() == io::ErrorKind::UnexpectedEof
-    }
-}
-
-impl IsEof for FromUtf8Error {
-    fn is_eof(&self) -> bool {
-        false
     }
 }

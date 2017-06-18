@@ -1,3 +1,5 @@
+use cov::IntoStringLossy;
+
 use std::env;
 use std::path::{MAIN_SEPARATOR, PathBuf};
 use std::str::FromStr;
@@ -15,7 +17,7 @@ lazy_static! {
         }, PathBuf::from);
         cargo_home.push("registry");
         cargo_home.push("src");
-        let mut registry_path = cargo_home.to_string_lossy().into_owned();
+        let mut registry_path = cargo_home.into_string_lossy();
         registry_path.push(MAIN_SEPARATOR);
         registry_path
     };

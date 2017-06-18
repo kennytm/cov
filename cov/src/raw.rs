@@ -50,13 +50,11 @@ impl Gcov {
     /// * Returns [`UnknownFileType`] if the file is not a in GCNO/GCDA format.
     /// * Returns [`UnsupportedVersion`] if the GCNO/GCDA version is not supported by this crate.
     /// * Returns [`UnknownTag`] if the GCNO/GCDA contains an unrecognized record tag.
-    /// * Returns [`FromUtf8`] if any string in the file is not UTF-8 encoded.
     /// * Returns [`Io`] on I/O failure.
     ///
     /// [`UnknownFileType`]: ../error/enum.ErrorKind.html#variant.UnknownFileType
     /// [`UnsupportedVersion`]: ../error/enum.ErrorKind.html#variant.UnsupportedVersion
     /// [`UnknownTag`]: ../error/enum.ErrorKind.html#variant.UnknownTag
-    /// [`FromUtf8`]: ../error/enum.ErrorKind.html#variant.FromUtf8
     /// [`Io`]: ../error/enum.ErrorKind.html#variant.Io
     pub fn open<P: AsRef<Path>>(p: P, interner: &mut Interner) -> Result<Gcov> {
         debug!("open gcov file {:?}", p.as_ref());
