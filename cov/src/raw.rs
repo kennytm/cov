@@ -14,7 +14,7 @@ use std::{fmt, u64};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 #[cfg(feature = "serde")]
 use std::result::Result as StdResult;
 use std::str::FromStr;
@@ -36,6 +36,9 @@ derive_serialize_with_interner! {
         pub stamp: u32,
         /// Vector of records.
         pub records: Vec<Record>,
+        /// Source of the gcov file
+        #[serde(skip)]
+        pub src: Option<PathBuf>,
     }
 }
 
@@ -57,7 +60,13 @@ impl Gcov {
     /// [`Io`]: ../error/enum.ErrorKind.html#variant.Io
     pub fn open<P: AsRef<Path>>(p: P, interner: &mut Interner) -> Result<Gcov> {
         debug!("open gcov file {:?}", p.as_ref());
-        Reader::new(BufReader::new(File::open(p)?), interner)?.parse()
+        let src = p.as_ref().to_owned();
+        Location::File(src.clone()).wrap(|| -> Result<Gcov> {
+            let reader = BufReader::new(File::open(p)?);
+            let mut gcov = Reader::new(reader, interner)?.parse()?;
+            gcov.src = Some(src);
+            Ok(gcov)
+        })
     }
 }
 

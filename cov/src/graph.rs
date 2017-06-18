@@ -47,15 +47,21 @@ impl Graph {
     /// [`DuplicatedFunction`]: ../error/enum.ErrorKind.html#variant.DuplicatedFunction
     /// [`MissingFunction`]: ../error/enum.ErrorKind.html#variant.MissingFunction
     /// [`CountsMismatch`]: ../error/enum.ErrorKind.html#variant.MissingFunction
-    pub fn merge(&mut self, gcov: Gcov) -> Result<()> {
-        match self.version {
-            INVALID_VERSION => self.version = gcov.version,
-            v => ensure!(v == gcov.version, ErrorKind::VersionMismatch(v, gcov.version)),
-        }
-        match gcov.ty {
-            Type::Gcno => self.merge_gcno(gcov),
-            Type::Gcda => self.merge_gcda(gcov),
-        }
+    pub fn merge(&mut self, mut gcov: Gcov) -> Result<()> {
+        let source_location = match gcov.src.take() {
+            Some(path) => Location::File(path),
+            None => Location::None,
+        };
+        source_location.wrap(|| {
+            match self.version {
+                INVALID_VERSION => self.version = gcov.version,
+                v => ensure!(v == gcov.version, ErrorKind::VersionMismatch(v, gcov.version)),
+            }
+            match gcov.ty {
+                Type::Gcno => self.merge_gcno(gcov),
+                Type::Gcda => self.merge_gcda(gcov),
+            }
+        })
     }
 
     /// Merges a parsed GCNO into the graph.
@@ -69,9 +75,9 @@ impl Graph {
         let mut cur = INVALID_FUNCTION_INDEX;
         let checksum = gcno.stamp;
 
-        for record in gcno.records {
+        for (index, record) in gcno.records.into_iter().enumerate() {
             match record {
-                Record::Function(ident, function) => cur = self.add_function(checksum, ident, function)?,
+                Record::Function(ident, function) => cur = Location::RecordIndex(index).wrap(|| self.add_function(checksum, ident, function))?,
                 Record::Blocks(blocks) => self.add_blocks(cur, blocks),
                 Record::Arcs(arcs) => self.add_arcs(cur, arcs),
                 Record::Lines(lines) => self.add_lines(cur, lines),
@@ -95,9 +101,9 @@ impl Graph {
         let mut cur = INVALID_FUNCTION_INDEX;
         let checksum = gcda.stamp;
 
-        for record in gcda.records {
+        for (index, record) in gcda.records.into_iter().enumerate() {
             match record {
-                Record::Function(ident, function) => cur = self.find_function(checksum, ident, function)?,
+                Record::Function(ident, function) => cur = Location::RecordIndex(index).wrap(|| self.find_function(checksum, ident, function))?,
                 Record::ArcCounts(ac) => self.add_arc_counts(cur, ac)?,
                 Record::Summary(_) => {},
                 _ => trace!("gcda-unknown-record: {:?}", record),

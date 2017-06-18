@@ -86,14 +86,11 @@ fn test_consume_to_end() {
 impl<'si, R: Read> Reader<'si, R> {
     /// Advances the reader cursor by `count` bytes. If `res` is an error, include the file position information to the
     /// error, otherwise return `res` as-is.
-    fn advance_cursor<T, E>(&mut self, count: u64, res: StdResult<T, E>) -> Result<T>
-    where
-        E: At,
-        Error: From<E>,
-    {
-        let t = res.at_cursor(self.cursor)?;
-        self.cursor += count;
-        Ok(t)
+    fn advance_cursor<T, E: Into<Error>>(&mut self, count: u64, res: StdResult<T, E>) -> Result<T> {
+        Location::Cursor(self.cursor).wrap(|| {
+            self.cursor += count;
+            res
+        })
     }
 
     /// Reads a 32-bit number in gcov format.
@@ -171,7 +168,7 @@ impl<'si, R: Read> Reader<'si, R> {
         let _ = self.advance_cursor(length, value)?;
         let actual_length = buf.iter().rposition(|b| *b != 0).unwrap_or(!0).wrapping_add(1);
         buf.truncate(actual_length);
-        let string = String::from_utf8(buf).at_cursor(cursor)?;
+        let string = Location::Cursor(cursor).wrap(|| String::from_utf8(buf))?;
         Ok(self.interner.intern(string.into_boxed_str()))
     }
 
@@ -217,7 +214,7 @@ impl<'si, R: Read> Reader<'si, R> {
         };
         trace!("gcov-version @ 0x{:x}", result.cursor);
         let version = result.read_32()?;
-        let version = Version::try_from(version).before(result.cursor)?;
+        let version = Location::Cursor(result.cursor - 4).wrap(|| Version::try_from(version))?;
         result.version = version;
         trace!("gcov-stamp @ 0x{:x}", result.cursor);
         result.stamp = result.read_32()?;
@@ -253,7 +250,7 @@ impl<'si, R: Read> Reader<'si, R> {
                 OBJECT_SUMMARY_TAG |
                 PROGRAM_SUMMARY_TAG => Record::Summary(subreader.parse_summary()?),
                 EOF_TAG => bail!(ErrorKind::Eof),
-                tag => bail!(ErrorKind::UnknownTag(tag.0).at_cursor(cursor)),
+                tag => bail!(Location::Cursor(cursor).wrap_error(ErrorKind::UnknownTag(tag.0))),
             })
         })?;
         Ok(Gcov {
@@ -261,6 +258,7 @@ impl<'si, R: Read> Reader<'si, R> {
             version: self.version,
             stamp: self.stamp,
             records,
+            src: None,
         })
     }
 
@@ -372,7 +370,7 @@ impl<'si, R: Read> Reader<'si, R> {
         trace!("blocks-flags @ 0x{:x}", self.cursor);
         let flags = self.until_eof(|s| {
             let raw_flag = s.read_32()?;
-            Ok(BlockAttr::from_gcno(raw_flag).before(s.cursor)?)
+            Location::Cursor(s.cursor - 4).wrap(|| BlockAttr::from_gcno(raw_flag))
         })?;
         Ok(Blocks { flags })
     }
@@ -393,7 +391,7 @@ impl<'si, R: Read> Reader<'si, R> {
             let dest_block = BlockIndex(s.read_32()?);
             trace!("arc-flags @ 0x{:x}", s.cursor);
             let raw_flags = s.read_32()?;
-            let flags = ArcAttr::from_gcno(raw_flags).before(s.cursor)?;
+            let flags = Location::Cursor(s.cursor - 4).wrap(|| ArcAttr::from_gcno(raw_flags))?;
             Ok(Arc { dest_block, flags })
         })?;
         Ok(Arcs { src_block, arcs })

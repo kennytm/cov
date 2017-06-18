@@ -64,6 +64,8 @@ use std::fmt;
 #[cfg(feature = "serde")]
 use std::hash::Hash;
 use std::ops::Index;
+#[cfg(feature = "serde")]
+use std::path::PathBuf;
 
 /// A handle to an interned string in an [`Interner`].
 ///
@@ -408,5 +410,5 @@ macro_rules! derive_serialize_with_interner {
 }
 
 derive_serialize_with_interner! {
-    direct: u32, u64, usize
+    direct: u32, u64, usize, PathBuf
 }

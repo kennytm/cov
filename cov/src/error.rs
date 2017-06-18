@@ -5,7 +5,10 @@
 
 use raw::{Ident, Type, Version};
 
-use std::io;
+use std::{fmt, io};
+use std::error::Error as StdError;
+use std::path::PathBuf;
+use std::result::Result as StdResult;
 use std::string::FromUtf8Error;
 
 error_chain! {
@@ -84,50 +87,74 @@ error_chain! {
 
 //----------------------------------------------------------------------------------------------------------------------
 
-/// A trait to log contextual information. When applied on an error value, a warning message will be printed out to
-/// indicate an unexpected error.
-pub trait At: Sized {
+/// The location where an error happened.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Location {
+    /// No source location.
+    None,
+    /// Cursor position in a file.
+    Cursor(u64),
+    /// Record index in a GCNO/GCDA file.
+    RecordIndex(usize),
+    /// Path to a GCNO/GCDA file.
+    File(PathBuf),
+}
+
+impl Location {
+    /// Annotates the result with context information.
+    pub fn wrap<T, E: Into<Error>, F: FnOnce() -> StdResult<T, E>>(self, f: F) -> Result<T> {
+        f().map_err(|e| self.wrap_error(e))
+    }
+
+    /// Annotates the error with context information.
+    pub fn wrap_error<E: Into<Error>>(self, e: E) -> Error {
+        let mut error = e.into();
+        if self != Location::None {
+            let cause = Box::new(AtError {
+                location: self,
+                cause: error.1.next_error,
+            });
+            error.1.next_error = Some(cause);
+        }
+        error
+    }
+}
+
+#[derive(Debug)]
+struct AtError {
+    location: Location,
+    cause: Option<Box<StdError + Send + 'static>>,
+}
+
+impl fmt::Display for AtError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self.location {
+            Location::Cursor(cursor) => write!(fmt, "reading at file position {0} (0x{0:x})", cursor),
+            Location::RecordIndex(index) => write!(fmt, "parsing record index #{}", index),
+            Location::File(ref path) => write!(fmt, "parsing file {}", path.display()),
+            Location::None => write!(fmt, "nothing"),
+        }
+    }
+}
+
+impl StdError for AtError {
+    fn description(&self) -> &str {
+        "<error context>"
+    }
+
+    fn cause(&self) -> Option<&StdError> {
+        self.cause.as_ref().map(|e| &**e as &StdError)
+    }
+}
+
+
+/// A trait to check if an error is an EOF error.
+pub trait IsEof {
     /// Checks whether the error is caused by an unexpected EOF.
     fn is_eof(&self) -> bool;
-
-    /// Checks whether a warning should be printed out.
-    fn should_warn(&self) -> bool {
-        !self.is_eof()
-    }
-
-    /// Marks the current error with file cursor information.
-    fn at_cursor(self, cursor: u64) -> Self {
-        if self.should_warn() {
-            warn!("At file position {0} (0x{0:x}):", cursor)
-        }
-        self
-    }
-
-    /// Marks the current error with record index information.
-    fn at_index(self, index: usize) -> Self {
-        if self.should_warn() {
-            warn!("At record index {}:", index)
-        }
-        self
-    }
-
-    /// Marks the current error with the previous file cursor information.
-    fn before(self, cursor: u64) -> Self {
-        self.at_cursor(cursor - 4)
-    }
 }
 
-impl<T, E: At> At for ::std::result::Result<T, E> {
-    fn is_eof(&self) -> bool {
-        self.as_ref().err().map_or(false, E::is_eof)
-    }
-
-    fn should_warn(&self) -> bool {
-        self.as_ref().err().map_or(false, E::should_warn)
-    }
-}
-
-impl At for ErrorKind {
+impl IsEof for ErrorKind {
     fn is_eof(&self) -> bool {
         match *self {
             ErrorKind::Io(ref e) => e.is_eof(),
@@ -137,19 +164,19 @@ impl At for ErrorKind {
     }
 }
 
-impl At for Error {
+impl IsEof for Error {
     fn is_eof(&self) -> bool {
         self.kind().is_eof()
     }
 }
 
-impl At for io::Error {
+impl IsEof for io::Error {
     fn is_eof(&self) -> bool {
         self.kind() == io::ErrorKind::UnexpectedEof
     }
 }
 
-impl At for FromUtf8Error {
+impl IsEof for FromUtf8Error {
     fn is_eof(&self) -> bool {
         false
     }
