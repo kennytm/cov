@@ -22,7 +22,8 @@ pub fn update_from_clap<'a>(matches: &'a ArgMatches, specialized: &mut SpecialMa
 }
 
 pub fn normalize<'a, I>(args: I, specialized: &mut SpecialMap<'a>) -> Vec<&'a OsStr>
-    where I: IntoIterator<Item = &'a OsStr>
+where
+    I: IntoIterator<Item = &'a OsStr>,
 {
     let mut normalized = Vec::new();
 

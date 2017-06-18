@@ -38,7 +38,8 @@ pub struct UnsupportedSourceTypeName;
 
 impl SourceType {
     pub fn from_multi_str<'a, I>(strings: I) -> Result<SourceType, UnsupportedSourceTypeName>
-        where I: Iterator<Item = &'a str>
+    where
+        I: Iterator<Item = &'a str>,
     {
         let mut res = SourceType::empty();
         for s in strings {

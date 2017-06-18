@@ -15,14 +15,16 @@ use std::path::Path;
 pub trait OptionExt {
     type Value;
     fn unwrap_or_catch<E, F>(self, f: F) -> Result<Self::Value, E>
-        where F: FnOnce() -> Result<Self::Value, E>;
+    where
+        F: FnOnce() -> Result<Self::Value, E>;
 }
 
 impl<T> OptionExt for Option<T> {
     type Value = T;
 
     fn unwrap_or_catch<E, F>(self, f: F) -> Result<Self::Value, E>
-        where F: FnOnce() -> Result<Self::Value, E>
+    where
+        F: FnOnce() -> Result<Self::Value, E>,
     {
         match self {
             Some(v) => Ok(v),
