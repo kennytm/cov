@@ -13,7 +13,6 @@ extern crate lazy_static;
 #[macro_use]
 extern crate serde_json;
 extern crate cov;
-extern crate colored;
 extern crate copy_dir;
 extern crate env_logger;
 extern crate glob;
@@ -23,19 +22,38 @@ extern crate open;
 extern crate rustc_demangle;
 extern crate serde;
 extern crate tera;
+extern crate termcolor;
 extern crate toml;
 
+/// Prints a progress, similar to the cargo output.
 macro_rules! progress {
     ($tag:expr, $fmt:expr $(, $args:expr)*) => {{
-        use colored::Colorize;
-        writeln!(::std::io::stderr(), concat!("{:>12} ", $fmt), $tag.green().bold() $(, $args)*).unwrap();
+        (|| -> ::std::io::Result<()> {
+            use ::termcolor::*;
+            let stream = StandardStream::stderr(ColorChoice::Auto);
+            let mut lock = stream.lock();
+            lock.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))?;
+            write!(lock, "{:>12} ", $tag)?;
+            lock.reset()?;
+            writeln!(lock, $fmt $(, $args)*)?;
+            Ok(())
+        })().expect("print progress")
     }}
 }
 
+/// Prints a warning, similar to cargo output.
 macro_rules! warning {
     ($fmt:expr $(, $args:expr)*) => {{
-        use colored::Colorize;
-        writeln!(::std::io::stderr(), concat!("{} ", $fmt), "warning:".yellow().bold() $(, $args)*).unwrap();
+        (|| -> ::std::io::Result<()> {
+            use ::termcolor::*;
+            let stream = StandardStream::stderr(ColorChoice::Auto);
+            let mut lock = stream.lock();
+            lock.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))?;
+            write!(lock, "warning: ")?;
+            lock.reset()?;
+            writeln!(lock, $fmt $(, $args)*)?;
+            Ok(())
+        })().expect("print warning")
     }}
 }
 
@@ -51,20 +69,39 @@ mod sourcepath;
 use argparse::*;
 use cargo::Cargo;
 use clap::ArgMatches;
-use error::Result;
+use error::{Error, Result};
 use sourcepath::*;
-use std::ffi::OsStr;
-use std::io::Write;
 
-#[cfg(not(debug_assertions))]
+use std::ffi::OsStr;
+use std::io::{self, Write};
+
 fn main() {
     if let Err(error) = run() {
-        writeln!(stderr(), "{} {}", "error:".red().bold(), error).unwrap();
+        print_error(error).expect("error while printing error 🤷")
     }
 }
 
-#[cfg(debug_assertions)]
-quick_main!(run);
+fn print_error(error: Error) -> io::Result<()> {
+    use termcolor::*;
+    let stream = StandardStream::stderr(ColorChoice::Auto);
+    let mut lock = stream.lock();
+
+    for (i, e) in error.iter().enumerate() {
+        if i == 0 {
+            lock.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_intense(true).set_bold(true))?;
+            write!(lock, "error: ")?;
+        } else {
+            lock.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
+            write!(lock, "caused by: ")?;
+        }
+        lock.reset()?;
+        writeln!(lock, "{}", e)?;
+    }
+    if let Some(backtrace) = error.backtrace() {
+        writeln!(lock, "\n{:?}", backtrace)?;
+    }
+    Ok(())
+}
 
 fn run() -> Result<()> {
     let matches = parse_args();
