@@ -186,12 +186,12 @@ impl fmt::Debug for Version {
 
 impl fmt::Display for Version {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}{}{}{}",
-            (self.0 >> 24 & 0xff) as u8 as char,
-            (self.0 >> 16 & 0xff) as u8 as char,
-            (self.0 >> 8 & 0xff) as u8 as char,
-            (self.0 & 0xff) as u8 as char,
-        )
+        use std::fmt::Write;
+        fmt.write_char((self.0 >> 24 & 0xff) as u8 as char)?;
+        fmt.write_char((self.0 >> 16 & 0xff) as u8 as char)?;
+        fmt.write_char((self.0 >> 8 & 0xff) as u8 as char)?;
+        fmt.write_char((self.0 & 0xff) as u8 as char)?;
+        Ok(())
     }
 }
 

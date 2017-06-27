@@ -6,7 +6,7 @@
 //! and line number of each node in the CFG.
 //!
 //! GCDA (gcov data) files are created when running the code program produced with `-Z profile` flag. For every edge in
-//! the CFG, the gcda stores how many times this edge has been taken.
+//! the CFG, the GCDA stores how many times this edge has been taken.
 //!
 //! Combining the statistics in GCDA and source information in GCNO, coverage tools can generate a branch coverage
 //! report.

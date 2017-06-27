@@ -1,8 +1,8 @@
 //! String interning.
 //!
-//! `*.gcno` files contain a lot of repeated strings like the filenames and function names. In order to save time and
-//! memory comparing these strings, they will all be stored into the [`Interner`] class, and normal operations that does
-//! not involve the actual string content are done through the proxy [`Symbol`] handles.
+//! GCNO files contain a lot of repeated strings like the filenames and function names. In order to save time and memory
+//! comparing these strings, they will all be stored into the [`Interner`] class, and normal operations that does not
+//! involve the actual string content are done through the proxy [`Symbol`] handles.
 //!
 //! ```rust
 //! use cov::Interner;

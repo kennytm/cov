@@ -141,7 +141,7 @@ impl StdError for AtError {
     }
 
     fn cause(&self) -> Option<&StdError> {
-        self.cause.as_ref().map(|e| &**e as &StdError)
+        self.cause.as_ref().map(|e| -> &StdError { &**e })
     }
 }
 
