@@ -11,7 +11,7 @@ utilizes LLVM's gcov-compatible profile generation pass, and supports a lot of p
 Usage: for Local Testing
 ------------------------
 
-You may install `cargo-cov` via `cargo`. Rust 1.17.0 or above is required.
+You may install `cargo-cov` via `cargo`. Rust 1.19.0 or above is recommended.
 
 ```sh
 cargo install cargo-cov
@@ -30,7 +30,16 @@ cargo cov test
 cargo cov report --open
 ```
 
+**Warning:** Using `cargo cov test` before 1.19 will produce a corrupt report due to lack of
+[target-specific runner](https://github.com/rust-lang/cargo/pull/3954) that can prevent the program from trying to merge
+two incompatible coverage data analysis. If you must use pre-1.19 toolchain, please execute the doctests *before* the
+normal tests:
 
+```sh
+# Run --doc tests before other things before 1.19
+cargo cov test --doc
+cargo cov test --lib
+```
 
 <!--
 

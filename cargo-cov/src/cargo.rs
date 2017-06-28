@@ -1,17 +1,19 @@
 use argparse::SpecialMap;
 use error::{ErrorKind, Result};
 use lookup::*;
+use shim::move_gcov_files;
 use utils::{CommandExt, OptionExt, clean_dir, set_executable};
 
 use cov::IntoStringLossy;
 use serde_json::from_reader;
 use shell_escape::escape;
+use tempdir::TempDir;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::env::current_exe;
 use std::ffi::{OsStr, OsString};
-use std::fs::{File, canonicalize, create_dir_all};
+use std::fs::{File, canonicalize, create_dir, create_dir_all};
 use std::io::Write;
 use std::iter::once;
 use std::path::{Path, PathBuf};
@@ -56,7 +58,7 @@ impl<'a> Cargo<'a> {
                 (Cow::Owned(canonicalize(p)?.into_string_lossy()), Cow::Borrowed(n))
             },
             None => {
-                if supports_built_in_profiler(&rustc_path, &cov_build_path, target) {
+                if supports_built_in_profiler(&rustc_path, target) {
                     (Cow::Borrowed("@native"), Cow::Borrowed("@native"))
                 } else {
                     let (p, n) = find_native_profiler_lib(target)?;
@@ -96,6 +98,13 @@ impl<'a> Cargo<'a> {
         let rustc_shim = self.write_shim(&self_path, "rustc-shim.bat")?;
         let rustdoc_shim = self.write_shim(&self_path, "rustdoc-shim.bat")?;
         let test_runner = self.write_shim(&self_path, "test-runner.bat")?;
+        let test_runner_slice: &[&Path] = &[&test_runner];
+
+        let target = if let Ok(true) = supports_target_runner(&self.cargo_path) {
+            once((self.target, CargoConfigTarget { runner: test_runner_slice })).collect()
+        } else {
+            HashMap::new()
+        };
 
         let config_bytes = ::toml::to_vec(&CargoConfig {
             build: CargoConfigBuild {
@@ -103,7 +112,7 @@ impl<'a> Cargo<'a> {
                 rustc: &rustc_shim,
                 rustdoc: &rustdoc_shim,
             },
-            target: once((self.target, CargoConfigTarget { runner: &[&test_runner] })).collect(),
+            target,
         })?;
 
         let mut config_path = self.cov_build_path.join(".cargo");
@@ -140,7 +149,7 @@ impl<'a> Cargo<'a> {
         cmd.current_dir(&self.cov_build_path)
             .env("COV_RUSTC", self.rustc_path)
             .env("COV_RUSTDOC", self.rustdoc_path)
-            .env("COV_BUILD_PATH", self.cov_build_path)
+            .env("COV_BUILD_PATH", &self.cov_build_path)
             .env("COV_PROFILER_LIB_PATH", &*self.profiler_lib_path)
             .env("COV_PROFILER_LIB_NAME", &*self.profiler_lib_name)
             .arg(subcommand)
@@ -150,7 +159,12 @@ impl<'a> Cargo<'a> {
 
         progress!("Delegate", "{:?}", cmd);
 
-        cmd.ensure_success("cargo")
+        cmd.ensure_success("cargo")?;
+        if subcommand == "test" || subcommand == "run" {
+            move_gcov_files(&self.cov_build_path, OsStr::new("gcda"))?;
+        }
+
+        Ok(())
     }
 
     pub fn clean(&self, gcda_only: bool, report: bool) -> Result<()> {
@@ -243,11 +257,13 @@ struct CargoConfigTarget<'a> {
     runner: &'a [&'a Path],
 }
 
-fn supports_built_in_profiler(rustc: &str, temp_path: &Path, target: &str) -> bool {
+fn supports_built_in_profiler(rustc: &str, target: &str) -> bool {
+    let dir = TempDir::new("supports_built_in_profiler").expect("created temporary directory");
+
     let result = Command::new(rustc)
         .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .args(
             &[
                 "-",
@@ -261,10 +277,54 @@ fn supports_built_in_profiler(rustc: &str, temp_path: &Path, target: &str) -> bo
                 "--out-dir",
             ],
         )
-        .arg(temp_path)
+        .arg(dir.path())
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    debug!("supports_built_in_profiler({:?}, {:?}, {:?}) = {}", rustc, temp_path, target, result);
+    debug!("supports_built_in_profiler({:?}, {:?}) = {}", rustc, target, result);
     result
+}
+
+fn supports_target_runner(cargo: &OsStr) -> Result<bool> {
+    use std::io::Write;
+
+    let dir = TempDir::new("supports_target_runner")?;
+
+    let mut cargo_config_path = dir.path().join(".cargo");
+    create_dir(&cargo_config_path)?;
+    cargo_config_path.push("config");
+    let mut file = File::create(cargo_config_path)?;
+    write!(file, "[target.{}]\nrunner = \"echo\"", HOST)?;
+    drop(file);
+
+    let mut manifest_path = dir.path().join("Cargo.toml");
+    let mut file = File::create(manifest_path)?;
+    write!(
+        file,
+        r#"
+            #![cfg(test)] /* Note: this file doubles as `Cargo.toml` and `lib.rs`
+
+            [package]
+            name = "check_runner"
+            version = "0.0.0"
+
+            [lib]
+            path = "Cargo.toml"
+
+            # */
+        "#
+    )?;
+    drop(file);
+
+    let result = Command::new(cargo) // @rustfmt-force-break
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .current_dir(dir.path())
+        .arg("build")
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    debug!("supports_target_runner({:?}) = {}", cargo, result);
+    Ok(result)
 }

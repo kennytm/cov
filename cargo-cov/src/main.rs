@@ -24,6 +24,7 @@ extern crate rand;
 extern crate rustc_demangle;
 extern crate serde;
 extern crate shell_escape;
+extern crate tempdir;
 extern crate tera;
 extern crate termcolor;
 extern crate toml;

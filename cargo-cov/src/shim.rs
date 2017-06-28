@@ -11,7 +11,7 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs::rename;
 use std::path::Path;
-use std::process::{Command, exit};
+use std::process::Command;
 
 pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
     let rustc_path = env::var_os("COV_RUSTC").expect("COV_RUSTC");
@@ -45,7 +45,7 @@ pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
 
     cmd.ensure_success("rustc")?;
     if is_local {
-        move_files(cov_build_path, OsStr::new("gcno"), RenameStrategy::KeepSourceName)?;
+        move_gcov_files(cov_build_path, OsStr::new("gcno"))?;
     }
 
     Ok(())
@@ -67,7 +67,7 @@ pub fn rustdoc<'a, I: Iterator<Item = &'a OsStr>>(args: I) -> Result<()> {
     debug!("Executing {:?}", cmd);
 
     cmd.ensure_success("rustdoc")?;
-    move_files(cov_build_path, OsStr::new("gcda"), RenameStrategy::Randomize)?;
+    move_gcov_files(cov_build_path, OsStr::new("gcda"))?;
 
     Ok(())
 }
@@ -81,26 +81,15 @@ pub fn run<'a, I: Iterator<Item = &'a OsStr>>(mut args: I) -> Result<()> {
     debug!("Executing {:?}", cmd);
 
     cmd.ensure_success("test")?;
-    move_files(cov_build_path, OsStr::new("gcda"), RenameStrategy::Randomize)?;
+    move_gcov_files(cov_build_path, OsStr::new("gcda"))?;
 
     Ok(())
 }
 
-enum RenameStrategy {
-    KeepSourceName,
-    Randomize,
-}
-
-fn move_files(cov_build_path: &Path, extension: &OsStr, rename_strategy: RenameStrategy) -> Result<()> {
+pub fn move_gcov_files(cov_build_path: &Path, extension: &OsStr) -> Result<()> {
     let mut rng = thread_rng();
     let mut dest_path = cov_build_path.join(extension);
     dest_path.push("*");
-
-    let mut random_filename = || {
-        let mut filename = OsString::from(format!("{:016x}.", rng.gen::<u64>()));
-        filename.push(extension);
-        filename
-    };
 
     let mut it = WalkDir::new(cov_build_path).into_iter().filter_entry(|entry| {
         let file_type = entry.file_type();
@@ -124,22 +113,13 @@ fn move_files(cov_build_path: &Path, extension: &OsStr, rename_strategy: RenameS
 
         let source_path = entry.path();
 
-        match rename_strategy {
-            RenameStrategy::KeepSourceName => {
-                if let Some(file_name) = source_path.file_name() {
-                    dest_path.set_file_name(file_name);
-                } else {
-                    dest_path.set_file_name(random_filename());
-                }
-            },
-            RenameStrategy::Randomize => {
-                loop {
-                    dest_path.set_file_name(random_filename());
-                    if !dest_path.exists() {
-                        break;
-                    }
-                }
-            },
+        loop {
+            let mut filename = OsString::from(format!("{:016x}.", rng.gen::<u64>()));
+            filename.push(extension);
+            dest_path.set_file_name(filename);
+            if !dest_path.exists() {
+                break;
+            }
         }
 
         trace!("mv {:?} {:?}", source_path, dest_path);
