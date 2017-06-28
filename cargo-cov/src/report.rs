@@ -1,7 +1,7 @@
-use error::Result;
+use error::{Result, ResultExt};
 use sourcepath::{SourceType, identify_source_path};
 use template::new as new_template;
-use utils::clean_dir;
+use utils::{clean_dir, parent_3};
 
 use copy_dir::copy_dir;
 use cov::{Gcov, Graph, Interner, Report, Symbol};
@@ -28,19 +28,13 @@ pub fn generate(cov_build_path: &Path, template_name: &OsStr, allowed_source_typ
 fn create_graph(cov_build_path: &Path, interner: &mut Interner) -> Result<Graph> {
     let mut graph = Graph::default();
 
-    for entry in read_dir(cov_build_path)? {
-        let path = entry?.path();
-        if path.extension() == Some(OsStr::new("gcno")) {
-            trace!("merging gcno {:?}", path);
-            graph.merge(Gcov::open(path, interner)?)?;
-        }
-    }
-
-    for entry in read_dir(cov_build_path.join("gcda"))? {
-        let path = entry?.path();
-        if path.extension() == Some(OsStr::new("gcda")) {
-            trace!("merging gcda {:?}", path);
-            graph.merge(Gcov::open(path, interner)?)?;
+    for extension in &["gcno", "gcda"] {
+        for entry in read_dir(cov_build_path.join(extension))? {
+            let path = entry?.path();
+            if path.extension() == Some(OsStr::new(extension)) {
+                trace!("merging {} {:?}", extension, path);
+                graph.merge(Gcov::open(path, interner)?)?;
+            }
         }
     }
 
@@ -76,7 +70,7 @@ fn render(report_path: &Path, template_name: &OsStr, allowed_source_types: Sourc
     template_path.push("*");
 
     // The report path is at $crate/target/cov/report, so we call .parent() three times.
-    let crate_path = report_path.parent().unwrap().parent().unwrap().parent().unwrap().to_string_lossy();
+    let crate_path = parent_3(report_path).to_string_lossy();
 
     let mut tera = new_template(template_path.to_str().expect("UTF-8 template path"))?;
 

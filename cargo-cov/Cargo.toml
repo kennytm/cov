@@ -20,6 +20,7 @@ cov = { version = "0.0", path = "../cov", features = ["serde_json"] }
 bitflags = { version = "0.9", default-features = false }
 clap = "2.24"
 copy_dir = "0.1"
+either = "1.1" # <- added just because .flat_map(|a| a) is not clone
 env_logger = "0.4"
 error-chain = "0.10"
 glob = "0.2"
@@ -33,12 +34,8 @@ rustc-demangle = "0.1"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
+shell-escape = "0.1"
 tera = "0.10"
 termcolor = "0.3"
 toml = "0.4"
-
-[[bin]]
-name = "cargo-cov"
-
-[[bin]]
-name = "shim-for-cargo-cov"
+walkdir = "1.0"

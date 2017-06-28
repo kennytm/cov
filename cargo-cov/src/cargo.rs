@@ -1,10 +1,11 @@
 use argparse::SpecialMap;
 use error::{ErrorKind, Result};
 use lookup::*;
-use utils::{OptionExt, clean_dir};
+use utils::{CommandExt, OptionExt, clean_dir, set_executable};
 
 use cov::IntoStringLossy;
 use serde_json::from_reader;
+use shell_escape::escape;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -26,7 +27,7 @@ pub struct Cargo<'a> {
     manifest_path: PathBuf,
     cov_build_path: PathBuf,
     target: &'a str,
-    profiler_lib_path: String,
+    profiler_lib_path: Cow<'static, str>,
     profiler_lib_name: Cow<'a, str>,
     forward_args: Vec<&'a OsStr>,
 }
@@ -46,19 +47,24 @@ impl<'a> Cargo<'a> {
         let mut cov_build_path = metadata.target_directory.unwrap_or_catch(|| find_target_path(&manifest_path))?;
         cov_build_path.push("cov");
         cov_build_path.push("build");
+        create_dir_all(&cov_build_path)?;
 
-        let target = special_args.get("target").and_then(|s| s.to_str());
+        let target = special_args.get("target").and_then(|s| s.to_str()).unwrap_or(HOST);
         let (profiler_lib_path, profiler_lib_name) = match special_args.get("profiler") {
             Some(&path) => {
                 let (p, n) = split_profiler_lib(Path::new(path))?;
-                (Cow::Borrowed(p), Cow::Borrowed(n))
+                (Cow::Owned(canonicalize(p)?.into_string_lossy()), Cow::Borrowed(n))
             },
             None => {
-                let (p, n) = find_native_profiler_lib(target.unwrap_or(HOST))?;
-                (Cow::Owned(p), Cow::Owned(n))
+                if supports_built_in_profiler(&rustc_path, &cov_build_path, target) {
+                    (Cow::Borrowed("@native"), Cow::Borrowed("@native"))
+                } else {
+                    let (p, n) = find_native_profiler_lib(target)?;
+                    (Cow::Owned(canonicalize(p)?.into_string_lossy()), Cow::Owned(n))
+                }
             },
         };
-        let profiler_lib_path = canonicalize(profiler_lib_path)?.into_string_lossy();
+        debug!("Profiler: -L {} -l {}", profiler_lib_path, profiler_lib_name);
 
         Ok(Cargo {
             cargo_path,
@@ -66,7 +72,7 @@ impl<'a> Cargo<'a> {
             rustdoc_path,
             manifest_path,
             cov_build_path,
-            target: target.unwrap_or(HOST),
+            target,
             profiler_lib_path,
             profiler_lib_name,
             forward_args,
@@ -79,28 +85,25 @@ impl<'a> Cargo<'a> {
 
     /// Prepares the coverage folder for building.
     fn prepare_cov_build_path(&self) -> Result<()> {
-        let mut shim_path = current_exe()?;
-        shim_path.set_file_name("shim-for-cargo-cov");
+        let self_path = match current_exe() {
+            Ok(path) => escape(Cow::Owned(path.into_string_lossy())).into_owned(),
+            Err(_) => "cargo".to_owned(),
+        };
 
+        create_dir_all(self.cov_build_path.join("gcno"))?;
         create_dir_all(self.cov_build_path.join("gcda"))?;
+
+        let rustc_shim = self.write_shim(&self_path, "rustc-shim.bat")?;
+        let rustdoc_shim = self.write_shim(&self_path, "rustdoc-shim.bat")?;
+        let test_runner = self.write_shim(&self_path, "test-runner.bat")?;
 
         let config_bytes = ::toml::to_vec(&CargoConfig {
             build: CargoConfigBuild {
                 target_dir: ".",
-                rustdoc: &shim_path,
-                rustflags: &[
-                    "-Cpasses=insert-gcov-profiling",
-                    "-Clink-dead-code",
-                    "-Coverflow-checks=off",
-                    "-Cinline-threshold=0",
-                    // "-Zdebug-macros", // don't enable, makes the gcno graph involving assert! even worse.
-                    "-L",
-                    &self.profiler_lib_path,
-                    "-l",
-                    &self.profiler_lib_name,
-                ],
+                rustc: &rustc_shim,
+                rustdoc: &rustdoc_shim,
             },
-            target: once((self.target, CargoConfigTarget { runner: &shim_path })).collect(),
+            target: once((self.target, CargoConfigTarget { runner: &[&test_runner] })).collect(),
         })?;
 
         let mut config_path = self.cov_build_path.join(".cargo");
@@ -111,6 +114,23 @@ impl<'a> Cargo<'a> {
 
         Ok(())
     }
+
+    fn write_shim(&self, self_path: &str, shim_name: &str) -> Result<PathBuf> {
+        #[cfg(unix)]
+        const HEADER: &str = "#!/bin/sh";
+        #[cfg(unix)]
+        const FORWARD_ARGS: &str = "\"$@\"";
+        #[cfg(windows)]
+        const HEADER: &str = "@echo off";
+        #[cfg(windows)]
+        const FORWARD_ARGS: &str = "%*";
+
+        let shim_path = self.cov_build_path.join(shim_name);
+        let mut file = File::create(&shim_path)?;
+        set_executable(&file)?;
+        write!(file, "{}\n{} {} {}", HEADER, self_path, shim_name, FORWARD_ARGS)?;
+        Ok(shim_path)
+    }
 }
 
 impl<'a> Cargo<'a> {
@@ -118,9 +138,11 @@ impl<'a> Cargo<'a> {
         self.prepare_cov_build_path()?;
         let mut cmd = Command::new(self.cargo_path);
         cmd.current_dir(&self.cov_build_path)
+            .env("COV_RUSTC", self.rustc_path)
             .env("COV_RUSTDOC", self.rustdoc_path)
             .env("COV_BUILD_PATH", self.cov_build_path)
-            .env("COV_RUSTDOC_PROFILER_LIB_PATH", self.profiler_lib_path)
+            .env("COV_PROFILER_LIB_PATH", &*self.profiler_lib_path)
+            .env("COV_PROFILER_LIB_NAME", &*self.profiler_lib_name)
             .arg(subcommand)
             .args(&["--target", self.target, "--manifest-path"])
             .arg(self.manifest_path)
@@ -128,10 +150,7 @@ impl<'a> Cargo<'a> {
 
         progress!("Delegate", "{:?}", cmd);
 
-        let status = cmd.status()?;
-        ensure!(status.success(), ErrorKind::ForwardFailed(status));
-
-        Ok(())
+        cmd.ensure_success("cargo")
     }
 
     pub fn clean(&self, gcda_only: bool, report: bool) -> Result<()> {
@@ -215,11 +234,37 @@ struct CargoConfig<'a> {
 struct CargoConfigBuild<'a> {
     #[serde(rename = "target-dir")]
     target_dir: &'a str,
-    rustflags: &'a [&'a str],
+    rustc: &'a Path,
     rustdoc: &'a Path,
 }
 
 #[derive(Debug, Serialize)]
 struct CargoConfigTarget<'a> {
-    runner: &'a Path,
+    runner: &'a [&'a Path],
+}
+
+fn supports_built_in_profiler(rustc: &str, temp_path: &Path, target: &str) -> bool {
+    let result = Command::new(rustc)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .args(
+            &[
+                "-",
+                "-Zprofile",
+                "--crate-name",
+                "___",
+                "--crate-type",
+                "lib",
+                "--target",
+                target,
+                "--out-dir",
+            ],
+        )
+        .arg(temp_path)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    debug!("supports_built_in_profiler({:?}, {:?}, {:?}) = {}", rustc, temp_path, target, result);
+    result
 }

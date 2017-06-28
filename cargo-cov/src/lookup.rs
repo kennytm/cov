@@ -87,7 +87,6 @@ fn profiler_name_part(target: &str) -> Result<&str> {
     })
 }
 
-
 pub fn find_native_profiler_lib(target: &str) -> Result<(PathBuf, String)> {
     let part = profiler_name_part(target)?;
     let (prefix, suffix) = if target.ends_with("-msvc") {

@@ -11,6 +11,7 @@ error_chain! {
         TomlSer(::toml::ser::Error);
         Io(::std::io::Error);
         Json(::serde_json::Error);
+        WalkDir(::walkdir::Error);
     }
 
     errors {
@@ -30,9 +31,9 @@ error_chain! {
             display(".cargo/config has no `build.rustc` key")
         }
 
-        ForwardFailed(status: ExitStatus) {
-            description("cargo failed")
-            display("cargo exited with status {}", status)
+        ForwardFailed(command: &'static str, status: ExitStatus) {
+            description("command failed")
+            display("{} exited with {}", command, status)
         }
     }
 }

@@ -1,16 +1,23 @@
 //! Additional methods for libstd and external crates.
 
+use error::{ErrorKind, Result as CargoCovResult};
+
 use natord::compare_iter;
 use serde_json::Value;
 
 use std::cmp::Ordering;
-use std::fs::remove_dir_all;
+use std::fs::{File, Permissions, remove_dir_all};
 use std::io;
+#[cfg(target_os = "redox")]
+use std::os::redox::fs::PermissionsExt;
 #[cfg(any(target_os = "redox", unix))]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 #[cfg(windows)]
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub trait OptionExt {
     type Value;
@@ -78,4 +85,31 @@ impl ValueExt for Value {
             _ => None,
         }
     }
+}
+
+#[cfg(any(target_os = "redox", unix))]
+pub fn set_executable(file: &File) -> io::Result<()> {
+    file.set_permissions(Permissions::from_mode(0o755))
+}
+
+#[cfg(windows)]
+pub fn set_executable(file: &File) -> io::Result<()> {
+    Ok(())
+}
+
+pub trait CommandExt {
+    fn ensure_success(&mut self, name: &'static str) -> CargoCovResult<()>;
+}
+
+impl CommandExt for Command {
+    fn ensure_success(&mut self, name: &'static str) -> CargoCovResult<()> {
+        let status = self.status()?;
+        ensure!(status.success(), ErrorKind::ForwardFailed(name, status));
+        Ok(())
+    }
+}
+
+
+pub fn parent_3(path: &Path) -> &Path {
+    path.parent().expect("..").parent().expect("../..").parent().expect("../../..")
 }

@@ -12,24 +12,29 @@ extern crate serde_derive;
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_json;
-extern crate cov;
 extern crate copy_dir;
+extern crate cov;
+extern crate either;
 extern crate env_logger;
 extern crate glob;
 extern crate md5;
 extern crate natord;
 extern crate open;
+extern crate rand;
 extern crate rustc_demangle;
 extern crate serde;
+extern crate shell_escape;
 extern crate tera;
 extern crate termcolor;
 extern crate toml;
+extern crate walkdir;
 
 /// Prints a progress, similar to the cargo output.
 macro_rules! progress {
     ($tag:expr, $fmt:expr $(, $args:expr)*) => {{
         (|| -> ::std::io::Result<()> {
             use ::termcolor::*;
+            use ::std::io::Write;
             let stream = StandardStream::stderr(ColorChoice::Auto);
             let mut lock = stream.lock();
             lock.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))?;
@@ -46,6 +51,7 @@ macro_rules! warning {
     ($fmt:expr $(, $args:expr)*) => {{
         (|| -> ::std::io::Result<()> {
             use ::termcolor::*;
+            use ::std::io::Write;
             let stream = StandardStream::stderr(ColorChoice::Auto);
             let mut lock = stream.lock();
             lock.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))?;
@@ -57,32 +63,37 @@ macro_rules! warning {
     }}
 }
 
-mod error;
-mod utils;
-mod lookup;
 mod argparse;
 mod cargo;
+mod error;
+mod lookup;
 mod report;
-mod template;
+mod shim;
 mod sourcepath;
+mod template;
+mod utils;
 
 use argparse::*;
 use cargo::Cargo;
-use clap::ArgMatches;
+use clap::{ArgMatches, OsValues};
+use either::Either;
 use error::{Error, Result};
 use sourcepath::*;
+use termcolor::*;
 
 use std::ffi::OsStr;
 use std::io::{self, Write};
+use std::iter::empty;
+use std::process::exit;
 
 fn main() {
     if let Err(error) = run() {
-        print_error(error).expect("error while printing error 🤷")
+        print_error(error).expect("error while printing error 🤷");
+        exit(1);
     }
 }
 
 fn print_error(error: Error) -> io::Result<()> {
-    use termcolor::*;
     let stream = StandardStream::stderr(ColorChoice::Auto);
     let mut lock = stream.lock();
 
@@ -107,17 +118,34 @@ fn run() -> Result<()> {
     let matches = parse_args();
     env_logger::init().unwrap();
 
-    let matches = matches.subcommand_matches("cov").expect("This command should be executed as `cargo cov`.");
+    let (subcommand, matches) = matches.subcommand();
+    let matches = matches.expect("matches");
+
+    // Forward the shims. Otherwise, ensure it is run as `cargo cov`.
+    if subcommand.ends_with(".bat") {
+        let forward_args = match matches.values_of_os("") {
+            Some(a) => Either::Left(a),
+            None => Either::Right(empty()),
+        };
+        return match subcommand {
+            "rustc-shim.bat" => shim::rustc(forward_args),
+            "rustdoc-shim.bat" => shim::rustdoc(forward_args),
+            "test-runner.bat" => shim::run(forward_args),
+            _ => panic!("Don't know how to run {}", subcommand),
+        };
+    } else if subcommand != "cov" {
+        panic!("This command should be executed as `cargo cov`.");
+    }
     debug!("matches = {:?}", matches);
 
     let mut special_args = SpecialMap::with_capacity(3);
     update_from_clap(matches, &mut special_args);
 
     let (subcommand, matches) = matches.subcommand();
-    let matches = matches.unwrap();
+    let matches = matches.expect("matches");
     update_from_clap(matches, &mut special_args);
 
-    let forward_args = match matches.values_of_os("args") {
+    let forward_args = match matches.values_of_os("") {
         Some(args) => normalize(args, &mut special_args),
         None => Vec::new(),
     };
@@ -135,38 +163,48 @@ fn run() -> Result<()> {
         "report" => {
             generate_reports(&cargo, matches)?;
         },
-        _ => unreachable!("unknown subcommand {}", subcommand),
+        _ => {
+            print_unknown_subcommand(subcommand)?;
+        },
     }
 
     Ok(())
 }
 
 
+const HELP_TEMPLATE: &str = "\
+{about}
+
+Usage:
+    cargo cov <subcommand> [options]
+
+Options:
+{options}
+
+Subcommands:
+    build     Compile the crate and produce coverage data (*.gcno)
+    test      Test the crate and produce profile data (*.gcda)
+    run       Run a program and produces profile data (*.gcda)
+{subcommands}
+";
+
 fn parse_args() -> clap::ArgMatches<'static> {
-    clap_app!(@app (app_from_crate!())
+    clap_app!(cargo =>
+        (bin_name: "cargo")
+        (@setting AllowExternalSubcommands)
         (@subcommand cov =>
-            (bin_name: "cargo cov")
+            (author: crate_authors!(", "))
+            (about: crate_description!())
+            (version: crate_version!())
+            (template: HELP_TEMPLATE)
             (@setting DeriveDisplayOrder)
-            (@setting SubcommandRequiredElseHelp)
+            (@setting ArgRequiredElseHelp)
             (@setting GlobalVersion)
             (@setting PropagateGlobalValuesDown)
+            (@setting AllowExternalSubcommands)
             (@arg profiler: --profiler [LIB] +global "Path to `libclang_rt.profile_*.a`")
             (@arg target: --target [TRIPLE] +global "Target triple which the covered program will run in")
             (@arg ("manifest-path"): --("manifest-path") [PATH] +global "Path to the manifest of the package")
-            (@subcommand build =>
-                (about: "Compile the crate and produce coverage data (*.gcno)")
-                (@setting TrailingValues) // FIXME: TrailingValues is undocumented and may be wrong.
-                (@arg args: [ARGS]... "arguments to pass to `cargo build`")
-            )
-            (@subcommand test =>
-                (about: "Test the crate and produce profile data (*.gcda)")
-                (@setting TrailingValues)
-                (@arg args: [ARGS]... "arguments to pass to `cargo test`")
-            )
-            (@subcommand run =>
-                (about: "Run a program and produces profile data (*.gcda)")
-                (@arg args: [ARGS]... "arguments to pass to `cargo run`")
-            )
             (@subcommand clean =>
                 (about: "Clean coverage artifacts")
                 (@setting UnifiedHelpMessage)
@@ -209,5 +247,29 @@ fn generate_reports(cargo: &Cargo, matches: &ArgMatches) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+
+fn print_unknown_subcommand(subcommand: &str) -> io::Result<()> {
+    let stream = StandardStream::stderr(ColorChoice::Auto);
+    let mut lock = stream.lock();
+
+    lock.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
+    write!(lock, "error: ")?;
+    lock.reset()?;
+    write!(lock, "unrecognized command `")?;
+    lock.set_color(ColorSpec::new().set_bold(true))?;
+    write!(lock, "cargo cov ")?;
+    lock.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))?;
+    write!(lock, "{}", subcommand)?;
+    lock.reset()?;
+    write!(lock, "`.\n\nTry `")?;
+    lock.set_color(ColorSpec::new().set_bold(true))?;
+    write!(lock, "cargo cov ")?;
+    lock.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))?;
+    write!(lock, "--help")?;
+    lock.reset()?;
+    writeln!(lock, "` for a list of valid commands.")?;
     Ok(())
 }
