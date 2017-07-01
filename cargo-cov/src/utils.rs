@@ -16,7 +16,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 #[cfg(windows)]
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 pub trait OptionExt {

@@ -1,3 +1,13 @@
+//! `cargo-cov` is a cargo subcommand which performs source coverage collection and reporting for Rust crates.
+//! `cargo-cov` utilizes LLVM's gcov-compatible profile generation pass, and supports a lot of platforms.
+//!
+//! Please see the [crate README](https://github.com/kennytm/cov#readme) for detail.
+
+#![doc(html_root_url="https://docs.rs/cargo-cov/0.1.0")]
+#![cfg_attr(feature="cargo-clippy", warn(anonymous_parameters, fat_ptr_transmutes, missing_copy_implementations, missing_debug_implementations, missing_docs, trivial_casts, trivial_numeric_casts, unsafe_code, unused_extern_crates, unused_import_braces, unused_qualifications, variant_size_differences))]
+#![cfg_attr(feature="cargo-clippy", warn(filter_map, items_after_statements, mut_mut, mutex_integer, nonminimal_bool, option_map_unwrap_or, option_map_unwrap_or_else, option_unwrap_used, print_stdout, result_unwrap_used, similar_names, single_match_else, wrong_pub_self_convention))]
+// Note: NOT enabling the `unused_results` lint, too many false positive here.
+
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
@@ -22,7 +32,6 @@ extern crate natord;
 extern crate open;
 extern crate rand;
 extern crate rustc_demangle;
-extern crate serde;
 extern crate shell_escape;
 extern crate tempdir;
 extern crate tera;
@@ -30,40 +39,8 @@ extern crate termcolor;
 extern crate toml;
 extern crate walkdir;
 
-/// Prints a progress, similar to the cargo output.
-macro_rules! progress {
-    ($tag:expr, $fmt:expr $(, $args:expr)*) => {{
-        (|| -> ::std::io::Result<()> {
-            use ::termcolor::*;
-            use ::std::io::Write;
-            let stream = StandardStream::stderr(ColorChoice::Auto);
-            let mut lock = stream.lock();
-            lock.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))?;
-            write!(lock, "{:>12} ", $tag)?;
-            lock.reset()?;
-            writeln!(lock, $fmt $(, $args)*)?;
-            Ok(())
-        })().expect("print progress")
-    }}
-}
-
-/// Prints a warning, similar to cargo output.
-macro_rules! warning {
-    ($fmt:expr $(, $args:expr)*) => {{
-        (|| -> ::std::io::Result<()> {
-            use ::termcolor::*;
-            use ::std::io::Write;
-            let stream = StandardStream::stderr(ColorChoice::Auto);
-            let mut lock = stream.lock();
-            lock.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))?;
-            write!(lock, "warning: ")?;
-            lock.reset()?;
-            writeln!(lock, $fmt $(, $args)*)?;
-            Ok(())
-        })().expect("print warning")
-    }}
-}
-
+#[macro_use]
+mod ui;
 mod argparse;
 mod cargo;
 mod error;
@@ -76,48 +53,29 @@ mod utils;
 
 use argparse::*;
 use cargo::Cargo;
-use clap::{ArgMatches, OsValues};
+use clap::ArgMatches;
 use either::Either;
-use error::{Error, Result};
+use error::Result;
 use sourcepath::*;
-use termcolor::*;
 
 use std::ffi::OsStr;
-use std::io::{self, Write};
 use std::iter::empty;
 use std::process::exit;
 
+/// Program entry. Calls [`run()`] and prints any error returned to `stderr`.
+///
+/// [`run()`]: ./fn.run.html
 fn main() {
     if let Err(error) = run() {
-        print_error(error).expect("error while printing error 🤷");
+        ui::print_error(&error).expect("error while printing error 🤷");
         exit(1);
     }
 }
 
-fn print_error(error: Error) -> io::Result<()> {
-    let stream = StandardStream::stderr(ColorChoice::Auto);
-    let mut lock = stream.lock();
-
-    for (i, e) in error.iter().enumerate() {
-        if i == 0 {
-            lock.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_intense(true).set_bold(true))?;
-            write!(lock, "error: ")?;
-        } else {
-            lock.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
-            write!(lock, "caused by: ")?;
-        }
-        lock.reset()?;
-        writeln!(lock, "{}", e)?;
-    }
-    if let Some(backtrace) = error.backtrace() {
-        writeln!(lock, "\n{:?}", backtrace)?;
-    }
-    Ok(())
-}
-
+/// Runs the `cargo-cov` program.
 fn run() -> Result<()> {
     let matches = parse_args();
-    env_logger::init().unwrap();
+    env_logger::init().expect("initialized logger");
 
     let (subcommand, matches) = matches.subcommand();
     let matches = matches.expect("matches");
@@ -139,19 +97,29 @@ fn run() -> Result<()> {
     }
     debug!("matches = {:?}", matches);
 
+    // Read the --profiler/--target/--manifest-path options specified before the subcommand:
+    //
+    //     cargo cov --manifest-path Cargo.toml clean ...
+    //               ^~~~~~~~~~~~~~~~~~~~~~~~~~
     let mut special_args = SpecialMap::with_capacity(3);
     update_from_clap(matches, &mut special_args);
 
+    // Read the --profiler/--target/--manifest-path options specified after the subcommand:
+    //
+    //     cargo cov clean --manifest-path Cargo.toml ...
+    //                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
     let (subcommand, matches) = matches.subcommand();
     let matches = matches.expect("matches");
     update_from_clap(matches, &mut special_args);
 
+    // Extracting --profiler/--target/--manifest-path if they are written in an external subcommand (build, test, run).
     let forward_args = match matches.values_of_os("") {
         Some(args) => normalize(args, &mut special_args),
         None => Vec::new(),
     };
     let cargo = Cargo::new(special_args, forward_args)?;
 
+    // Actually run the subcommands. Please do not pass ArgMatches as a whole to the receiver functions.
     match subcommand {
         "build" | "test" | "run" => {
             cargo.forward(subcommand)?;
@@ -165,15 +133,16 @@ fn run() -> Result<()> {
             generate_reports(&cargo, matches)?;
         },
         _ => {
-            print_unknown_subcommand(subcommand)?;
+            ui::print_unknown_subcommand(subcommand)?;
         },
     }
 
     Ok(())
 }
 
-
-const HELP_TEMPLATE: &str = "\
+/// Parses the command line arguments using `clap`.
+fn parse_args() -> ArgMatches<'static> {
+    const HELP_TEMPLATE: &str = "\
 {about}
 
 Usage:
@@ -189,7 +158,6 @@ Subcommands:
 {subcommands}
 ";
 
-fn parse_args() -> clap::ArgMatches<'static> {
     clap_app!(cargo =>
         (bin_name: "cargo")
         (@setting AllowExternalSubcommands)
@@ -229,9 +197,11 @@ fn parse_args() -> clap::ArgMatches<'static> {
     ).get_matches()
 }
 
-
+/// Parses the command line arguments and forwards to [`report::generate`].
+///
+/// [`report::generate`]: report/fn.generate.html
 fn generate_reports(cargo: &Cargo, matches: &ArgMatches) -> Result<()> {
-    let allowed_source_types = matches.values_of("include").map_or(SOURCE_TYPE_DEFAULT, |it| SourceType::from_multi_str(it).unwrap());
+    let allowed_source_types = matches.values_of("include").map_or(SOURCE_TYPE_DEFAULT, |it| SourceType::from_multi_str(it).expect("SourceType"));
 
     let template = matches.value_of_os("template").unwrap_or_else(|| OsStr::new("html"));
     let open_path = report::generate(cargo.cov_build_path(), template, allowed_source_types)?;
@@ -248,29 +218,5 @@ fn generate_reports(cargo: &Cargo, matches: &ArgMatches) -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-
-fn print_unknown_subcommand(subcommand: &str) -> io::Result<()> {
-    let stream = StandardStream::stderr(ColorChoice::Auto);
-    let mut lock = stream.lock();
-
-    lock.set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))?;
-    write!(lock, "error: ")?;
-    lock.reset()?;
-    write!(lock, "unrecognized command `")?;
-    lock.set_color(ColorSpec::new().set_bold(true))?;
-    write!(lock, "cargo cov ")?;
-    lock.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))?;
-    write!(lock, "{}", subcommand)?;
-    lock.reset()?;
-    write!(lock, "`.\n\nTry `")?;
-    lock.set_color(ColorSpec::new().set_bold(true))?;
-    write!(lock, "cargo cov ")?;
-    lock.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))?;
-    write!(lock, "--help")?;
-    lock.reset()?;
-    writeln!(lock, "` for a list of valid commands.")?;
     Ok(())
 }

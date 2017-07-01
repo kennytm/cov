@@ -1,8 +1,10 @@
+//! Build environment information for `cargo cov`.
+
 use argparse::SpecialMap;
 use error::{ErrorKind, Result};
 use lookup::*;
 use shim::move_gcov_files;
-use utils::{CommandExt, OptionExt, clean_dir, set_executable};
+use utils::{CommandExt, clean_dir, set_executable};
 
 use cov::IntoStringLossy;
 use serde_json::from_reader;
@@ -14,27 +16,43 @@ use std::collections::HashMap;
 use std::env::current_exe;
 use std::ffi::{OsStr, OsString};
 use std::fs::{File, canonicalize, create_dir, create_dir_all};
-use std::io::Write;
+use std::io::{self, Write};
 use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 include!(concat!(env!("OUT_DIR"), "/host.rs"));
 
+/// Container to store information of the host environment and important command line arguments.
 #[derive(Debug)]
 pub struct Cargo<'a> {
+    /// Path to `cargo`.
     cargo_path: OsString,
+    /// Path to `rustc`.
     rustc_path: String,
+    /// Path to `rustdoc`.
     rustdoc_path: String,
+    /// Canonical path to `Cargo.toml`.
     manifest_path: PathBuf,
+    /// Canonical path to `target/cov/build`.
     cov_build_path: PathBuf,
+    /// Build target triples.
     target: &'a str,
+    /// Canonical path to the folder containing the compiler-rt profiler library, or the string `"@native"` if building
+    /// for nightly Rust.
     profiler_lib_path: Cow<'static, str>,
+    /// Name of the compiler-rt profiler library, or the string `"@native"` if building for nightly Rust.
     profiler_lib_name: Cow<'a, str>,
+    /// Arguments to be forwarded to `cargo`.
     forward_args: Vec<&'a OsStr>,
 }
 
 impl<'a> Cargo<'a> {
+    /// Creates a build environment from the command line arguments.
+    ///
+    /// `special_args` and `forward_args` should be parsed from [`argparse::normalize()`].
+    ///
+    /// [`argparse::normalize()`]: ../argparse/fn.normalize.html
     pub fn new(special_args: SpecialMap<'a>, forward_args: Vec<&'a OsStr>) -> Result<Cargo<'a>> {
         let cargo_path = find_cargo();
         let rustc_path = find_rustc("RUSTC");
@@ -46,7 +64,7 @@ impl<'a> Cargo<'a> {
         };
 
         let metadata = parse_metadata(&cargo_path, &manifest_path)?;
-        let mut cov_build_path = metadata.target_directory.unwrap_or_catch(|| find_target_path(&manifest_path))?;
+        let mut cov_build_path = metadata.target_directory.or_else(|| find_target_path(&manifest_path)).ok_or(ErrorKind::TargetDirectoryNotFound)?;
         cov_build_path.push("cov");
         cov_build_path.push("build");
         create_dir_all(&cov_build_path)?;
@@ -81,15 +99,22 @@ impl<'a> Cargo<'a> {
         })
     }
 
+    /// Obtains the `target/cov/build` path.
     pub fn cov_build_path(&self) -> &Path {
         &self.cov_build_path
     }
 
     /// Prepares the coverage folder for building.
+    ///
+    /// This method will write a `.cargo/config` file which:
+    ///
+    /// * Place all output artifact to `target/cov/build/` instead of `target/`, so the profiled objects will not
+    ///   interfere with normal objects
+    /// * Configure `cargo` to use [`cargo-cov` shims](../shim/index.html) when building and running tests.
     fn prepare_cov_build_path(&self) -> Result<()> {
         let self_path = match current_exe() {
             Ok(path) => escape(Cow::Owned(path.into_string_lossy())).into_owned(),
-            Err(_) => "cargo".to_owned(),
+            Err(_) => "cargo-cov".to_owned(),
         };
 
         create_dir_all(self.cov_build_path.join("gcno"))?;
@@ -124,7 +149,8 @@ impl<'a> Cargo<'a> {
         Ok(())
     }
 
-    fn write_shim(&self, self_path: &str, shim_name: &str) -> Result<PathBuf> {
+    /// Writes the content of a shim script.
+    fn write_shim(&self, self_path: &str, shim_name: &str) -> io::Result<PathBuf> {
         #[cfg(unix)]
         const HEADER: &str = "#!/bin/sh";
         #[cfg(unix)]
@@ -143,6 +169,7 @@ impl<'a> Cargo<'a> {
 }
 
 impl<'a> Cargo<'a> {
+    /// Runs the real cargo subcommand (build, test, run).
     pub fn forward(self, subcommand: &str) -> Result<()> {
         self.prepare_cov_build_path()?;
         let mut cmd = Command::new(self.cargo_path);
@@ -161,12 +188,14 @@ impl<'a> Cargo<'a> {
 
         cmd.ensure_success("cargo")?;
         if subcommand == "test" || subcommand == "run" {
+            // Before 1.19, the test-runner is absent, so we need to move them outside of the shim.
             move_gcov_files(&self.cov_build_path, OsStr::new("gcda"))?;
         }
 
         Ok(())
     }
 
+    /// Cleans the `target/cov` directory.
     pub fn clean(&self, gcda_only: bool, report: bool) -> Result<()> {
         fn do_clean(folder: &Path) -> Result<()> {
             progress!("Remove", "{}", folder.display());
@@ -186,7 +215,7 @@ impl<'a> Cargo<'a> {
     }
 }
 
-
+/// Locates the path to `Cargo.toml` if it is not specified in the command line.
 fn locate_project(cargo_path: &OsStr) -> Result<PathBuf> {
     let child = Command::new(cargo_path) // @rustfmt-force-break
         .stdin(Stdio::null())
@@ -194,7 +223,7 @@ fn locate_project(cargo_path: &OsStr) -> Result<PathBuf> {
         .stderr(Stdio::inherit())
         .arg("locate-project")
         .spawn()?;
-    let project_location: ProjectLocation = from_reader(child.stdout.unwrap())?;
+    let project_location: ProjectLocation = from_reader(child.stdout.expect("stdout"))?;
     Ok(project_location.root)
 }
 
@@ -208,7 +237,10 @@ struct Metadata {
     target_directory: Option<PathBuf>,
 }
 
-fn parse_metadata(cargo_path: &OsStr, manifest_path: &Path) -> Result<Metadata> {
+/// Obtains the `target/` directory for a crate using `cargo metadata`.
+///
+/// This method is supported only starting from Rust 1.19.
+fn parse_metadata(cargo_path: &OsStr, manifest_path: &Path) -> io::Result<Metadata> {
     let child = Command::new(cargo_path) // @rustfmt-force-break
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -216,26 +248,27 @@ fn parse_metadata(cargo_path: &OsStr, manifest_path: &Path) -> Result<Metadata> 
         .args(&["metadata", "--no-deps", "--format-version", "1", "--manifest-path"])
         .arg(manifest_path)
         .spawn()?;
-    let metadata = from_reader(child.stdout.unwrap())?;
+    let metadata = from_reader(child.stdout.expect("stdout"))?;
     Ok(metadata)
 }
 
-fn find_target_path(manifest_path: &Path) -> Result<PathBuf> {
+/// Obtains the `target/` path by searching for `Cargo.lock` or the `target/` directory itself in the ancestors.
+fn find_target_path(manifest_path: &Path) -> Option<PathBuf> {
     let mut base = manifest_path.to_owned();
     while base.pop() {
         base.push("target");
         if base.is_dir() {
-            return Ok(base);
+            return Some(base);
         }
         base.set_file_name("Cargo.lock");
         let has_cargo_lock = base.is_file();
         if has_cargo_lock {
             base.set_file_name("target");
-            return Ok(base);
+            return Some(base);
         }
         base.pop();
     }
-    Err(ErrorKind::TargetDirectoryNotFound.into())
+    None
 }
 
 #[derive(Debug, Serialize)]
@@ -257,6 +290,9 @@ struct CargoConfigTarget<'a> {
     runner: &'a [&'a Path],
 }
 
+/// Checks whether the `rustc` compiling for the specific target supports the `-Zprofile` flag.
+///
+/// `-Zprofile` is only supported on nightly Rust since 1.19, for a selected list of targets.
 fn supports_built_in_profiler(rustc: &str, target: &str) -> bool {
     let dir = TempDir::new("supports_built_in_profiler").expect("created temporary directory");
 
@@ -285,6 +321,9 @@ fn supports_built_in_profiler(rustc: &str, target: &str) -> bool {
     result
 }
 
+/// Checks whether the `cargo` supports the target-runner configuration.
+///
+/// Target-runner is only supported since Rust 1.19.
 fn supports_target_runner(cargo: &OsStr) -> Result<bool> {
     use std::io::Write;
 
@@ -297,7 +336,7 @@ fn supports_target_runner(cargo: &OsStr) -> Result<bool> {
     write!(file, "[target.{}]\nrunner = \"echo\"", HOST)?;
     drop(file);
 
-    let mut manifest_path = dir.path().join("Cargo.toml");
+    let manifest_path = dir.path().join("Cargo.toml");
     let mut file = File::create(manifest_path)?;
     write!(
         file,

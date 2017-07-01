@@ -1,3 +1,8 @@
+//! Errors related to the `cargo-cov` crate.
+//!
+//! Please see documentation of the [`error-chain` crate](https://docs.rs/error-chain/0.10.0/error_chain/) for detailed
+//! usage.
+
 use std::process::ExitStatus;
 
 error_chain! {

@@ -1,4 +1,27 @@
-//! Shim for rustc, rustdoc and test runner.
+//! Shims for `rustc`, `rustdoc` and test runner.
+//!
+//! When using `cargo cov` to compile or run a test, it will instruct `cargo` to callback to the `cargo-cov` executable
+//! instead of running `rustc`, `rustdoc` or the test program directly. The `cargo-cov` will perform some operations
+//! before and after forwarding to the underlying program to ensure the coverage reports are collected correctly.
+//!
+//! `rustc` flags
+//! -------------
+//!
+//! The shim for `rustc` is executed by running `cargo-cov rustc-shim.bat <args>`. If the crate to be built is an
+//! external crate, nothing will be modified. Otherwise, the shim will insert several flags like `-Zprofile` to enable
+//! coverage. The different handling between workspace and external crates is the reason why `RUSTFLAGS` is not used.
+//!
+//! GCNO and GCDA saving
+//! --------------------
+//!
+//! After `rustc`, `rustdoc` (doc tests) and the test programs are executed, a GCNO or GCDA file will be produced. The
+//! shim will then immediately scan the build directory and move the file inside `target/cov/build/{gcno,gcda}` under a
+//! unique new name.
+//!
+//! The renaming is necessary for non-nightly Rust where `-Zprofile` is not supported. The GCNO/GCDA produced will be
+//! named after the crate, which both the doc-test and normal test coincide (`-Zprofile` fixes the problem by including
+//! the hash as well). This will cause one GCNO to overwrite another, and GCDA-merge will produce a corrupt report.
+//! `cargo cov` works-around this by moving these files to a unique location as soon as they are generated.
 
 use argparse::is_rustc_compiling_local_crate;
 use error::Result;
@@ -13,6 +36,32 @@ use std::fs::rename;
 use std::path::Path;
 use std::process::Command;
 
+/// Builds a crate by forwarding `args` to `rustc`.
+///
+/// This function requires several environment variables to be set, otherwise it will panic.
+///
+/// | Environment variable | Meaning |
+/// |----------------------|---------|
+/// | `COV_RUSTC` | Path to `rustc` executable |
+/// | `COV_BUILD_PATH` | Path to `target/cov/build/` of the workspace |
+/// | `COV_PROFILER_LIB_PATH` | Path to folder containing `libclang_rt.profile*.a`, or the string `"@native"` |
+/// | `COV_PROFILER_LIB_NAME` | Library name e.g. `clang_rt.profile-x86_64`, or the string `"@native"` |
+///
+/// If the crate to build is in the current workspace, several flags will be added to the command line:
+///
+/// | Flag | Reason |
+/// |------|--------|
+/// | `-Zprofile` (nightly rustc) | Enable coverage |
+/// | `-Cpasses=insert-gcov-profiling` (stable rustc) | Enable coverage |
+/// | `-Clink-dead-code` | Do compile functions not called by anyone, so the function can appear red in the report |
+/// | `-Coverflow-checks=off` | Disable overflow checks, which create unnecessary branches
+/// | `-Cinline-threshold=0` | Disable inlining, which complicates control flow.
+///
+/// Additionally, all GCNO files generated will be moved to `$COV_BUILD_PATH/gcno/` after the build succeeds.
+///
+/// # Panics
+///
+/// Panics when any of the above environment variables is not set.
 pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
     let rustc_path = env::var_os("COV_RUSTC").expect("COV_RUSTC");
     let cov_build_path_os = env::var_os("COV_BUILD_PATH").expect("COV_BUILD_PATH");
@@ -25,7 +74,7 @@ pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
         let profiler_lib_path = env::var_os("COV_PROFILER_LIB_PATH").expect("COV_PROFILER_LIB_PATH");
         let profiler_lib_name = env::var_os("COV_PROFILER_LIB_NAME").expect("COV_PROFILER_LIB_NAME");
         debug!("Profiler: -L {:?} -l {:?}", profiler_lib_path, profiler_lib_name);
-        if &profiler_lib_path == OsStr::new("@native") && &profiler_lib_name == OsStr::new("@native") {
+        if profiler_lib_path == OsStr::new("@native") && profiler_lib_name == OsStr::new("@native") {
             cmd.arg("-Zprofile");
         } else {
             cmd.arg("-Cpasses=insert-gcov-profiling").arg("-L").arg(profiler_lib_path).arg("-l").arg(profiler_lib_name);
@@ -51,6 +100,21 @@ pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
     Ok(())
 }
 
+/// Runs doc-test by forwarding `args` to `rustdoc`.
+///
+/// This function requires several environment variables to be set, otherwise it will panic.
+///
+/// | Environment variable | Meaning |
+/// |----------------------|---------|
+/// | `COV_RUSTDOC` | Path to `rustdoc` executable |
+/// | `COV_BUILD_PATH` | Path to `target/cov/build/` of the workspace |
+/// | `COV_PROFILER_LIB_PATH` | Path to folder containing `libclang_rt.profile*.a`, or the string `"@native"` |
+///
+/// All GCDA files generated will be moved to `$COV_BUILD_PATH/gcda/` after the test succeeds.
+///
+/// # Panics
+///
+/// Panics when any of the above environment variables is not set.
 pub fn rustdoc<'a, I: Iterator<Item = &'a OsStr>>(args: I) -> Result<()> {
     let rustdoc_path = env::var_os("COV_RUSTDOC").expect("COV_RUSTDOC");
     let cov_build_path_os = env::var_os("COV_BUILD_PATH").expect("COV_BUILD_PATH");
@@ -59,7 +123,7 @@ pub fn rustdoc<'a, I: Iterator<Item = &'a OsStr>>(args: I) -> Result<()> {
     let mut cmd = Command::new(rustdoc_path);
 
     let link_dir = env::var_os("COV_PROFILER_LIB_PATH").expect("COV_PROFILER_LIB_PATH");
-    if &link_dir != OsStr::new("@native") {
+    if link_dir != OsStr::new("@native") {
         cmd.arg("-L").arg(link_dir);
     }
 
@@ -72,6 +136,20 @@ pub fn rustdoc<'a, I: Iterator<Item = &'a OsStr>>(args: I) -> Result<()> {
     Ok(())
 }
 
+/// Executes a program. The first string from `args` will be the path of the program to execute, and the rest will be
+/// command line arguments sent to that program.
+///
+/// This function requires several environment variables to be set, otherwise it will panic.
+///
+/// | Environment variable | Meaning |
+/// |----------------------|---------|
+/// | `COV_BUILD_PATH` | Path to `target/cov/build/` of the workspace |
+///
+/// All GCDA files generated will be moved to `$COV_BUILD_PATH/gcda/` after the program succeeds.
+///
+/// # Panics
+///
+/// Panics when any of the above environment variables is not set.
 pub fn run<'a, I: Iterator<Item = &'a OsStr>>(mut args: I) -> Result<()> {
     let cov_build_path_os = env::var_os("COV_BUILD_PATH").expect("COV_BUILD_PATH");
     let cov_build_path = Path::new(&cov_build_path_os);
@@ -86,12 +164,29 @@ pub fn run<'a, I: Iterator<Item = &'a OsStr>>(mut args: I) -> Result<()> {
     Ok(())
 }
 
+/// Moves all files with the given `extension` to `[cov_build_path]/[extension]/`, and renames them uniquely so that
+/// there won't be file name collision inside that folder.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+/// use cargo_cov::shim::move_gcov_files;
+///
+/// # fn main() { run().unwrap(); }
+/// # fn run() -> ::std::io::Result<()> {
+/// let build_folder = Path::new("workspace/target/cov/build");
+/// move_gcov_files(build_folder, OsStr::new("gcda"))?;
+/// // All `*.gcda` files found inside `workspace/target/cov/build` will now be moved to
+/// // `workspace/target/cov/build/gcda`.
+/// # }
+/// ```
 pub fn move_gcov_files(cov_build_path: &Path, extension: &OsStr) -> Result<()> {
     let mut rng = thread_rng();
     let mut dest_path = cov_build_path.join(extension);
     dest_path.push("*");
 
-    let mut it = WalkDir::new(cov_build_path).into_iter().filter_entry(|entry| {
+    let it = WalkDir::new(cov_build_path).into_iter().filter_entry(|entry| {
         let file_type = entry.file_type();
         let path = entry.path();
         if file_type.is_dir() && entry.depth() == 1 {
@@ -105,7 +200,7 @@ pub fn move_gcov_files(cov_build_path: &Path, extension: &OsStr) -> Result<()> {
         true
     });
 
-    while let Some(entry) = it.next() {
+    for entry in it {
         let entry = entry?;
         if !entry.file_type().is_file() {
             continue;
