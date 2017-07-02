@@ -45,6 +45,8 @@ pub struct Cargo<'a> {
     profiler_lib_name: Cow<'a, str>,
     /// Arguments to be forwarded to `cargo`.
     forward_args: Vec<&'a OsStr>,
+    /// List of packages in this workspace.
+    workspace_packages: Vec<String>,
 }
 
 impl<'a> Cargo<'a> {
@@ -68,6 +70,12 @@ impl<'a> Cargo<'a> {
         cov_build_path.push("cov");
         cov_build_path.push("build");
         create_dir_all(&cov_build_path)?;
+
+        let mut workspace_packages = metadata.workspace_members;
+        for pkg_id in &mut workspace_packages {
+            let space_index = pkg_id.find(' ').unwrap_or_else(|| pkg_id.len());
+            pkg_id.truncate(space_index);
+        }
 
         let target = special_args.get("target").and_then(|s| s.to_str()).unwrap_or(HOST);
         let (profiler_lib_path, profiler_lib_name) = match special_args.get("profiler") {
@@ -96,6 +104,7 @@ impl<'a> Cargo<'a> {
             profiler_lib_path,
             profiler_lib_name,
             forward_args,
+            workspace_packages,
         })
     }
 
@@ -168,6 +177,24 @@ impl<'a> Cargo<'a> {
     }
 }
 
+bitflags! {
+    /// Collection of things to be cleaned.
+    ///
+    /// These bitflags would be used in [`Cargo::clean()`].
+    ///
+    /// [`Cargo::clean()`]: ./struct.Cargo.html#method.clean
+    pub struct CleanTargets: u8 {
+        /// Delete the `target/cov/build/gcda/` folder.
+        const CLEAN_BUILD_GCDA = 1;
+        /// Delete the `target/cov/build/gcno/` folder and built artifacts of all crates in the current workspace.
+        const CLEAN_BUILD_GCNO = 2;
+        /// Delete the whole `target/cov/build/` folder.
+        const CLEAN_BUILD_EXTERNAL = 4;
+        /// Delete the `target/cov/report` folder.
+        const CLEAN_REPORT = 8;
+    }
+}
+
 impl<'a> Cargo<'a> {
     /// Runs the real cargo subcommand (build, test, run).
     pub fn forward(self, subcommand: &str) -> Result<()> {
@@ -196,19 +223,35 @@ impl<'a> Cargo<'a> {
     }
 
     /// Cleans the `target/cov` directory.
-    pub fn clean(&self, gcda_only: bool, report: bool) -> Result<()> {
+    pub fn clean(&self, clean_targets: CleanTargets) -> Result<()> {
         fn do_clean(folder: &Path) -> Result<()> {
             progress!("Remove", "{}", folder.display());
             clean_dir(folder)?;
             Ok(())
         }
 
-        if gcda_only {
-            do_clean(&self.cov_build_path.join("gcda"))?;
-        } else {
+        if clean_targets.contains(CLEAN_BUILD_EXTERNAL) {
             do_clean(&self.cov_build_path)?;
+        } else {
+            if clean_targets.contains(CLEAN_BUILD_GCDA) {
+                do_clean(&self.cov_build_path.join("gcda"))?
+            }
+            if clean_targets.contains(CLEAN_BUILD_GCNO) {
+                let mut cmd = Command::new(&self.cargo_path);
+                cmd.current_dir(&self.cov_build_path)
+                    .env("RUSTC", &self.rustc_path) // No need to run our shim.
+                    .args(&["clean", "--target", self.target, "--manifest-path"])
+                    .arg(&self.manifest_path);
+                for pkg_name in &self.workspace_packages {
+                    cmd.args(&["-p", pkg_name]);
+                }
+                progress!("Delegate", "{:?}", cmd);
+                cmd.ensure_success("cargo")?;
+                do_clean(&self.cov_build_path.join("gcno"))?
+            }
         }
-        if report {
+
+        if clean_targets.contains(CLEAN_REPORT) {
             do_clean(&self.cov_build_path.with_file_name("report"))?;
         }
         Ok(())
@@ -234,6 +277,7 @@ struct ProjectLocation {
 
 #[derive(Debug, Deserialize)]
 struct Metadata {
+    workspace_members: Vec<String>,
     target_directory: Option<PathBuf>,
 }
 

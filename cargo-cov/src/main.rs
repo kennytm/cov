@@ -121,20 +121,10 @@ fn run() -> Result<()> {
 
     // Actually run the subcommands. Please do not pass ArgMatches as a whole to the receiver functions.
     match subcommand {
-        "build" | "test" | "run" => {
-            cargo.forward(subcommand)?;
-        },
-        "clean" => {
-            let gcda_only = matches.is_present("gcda_only");
-            let report = matches.is_present("report");
-            cargo.clean(gcda_only, report)?;
-        },
-        "report" => {
-            generate_reports(&cargo, matches)?;
-        },
-        _ => {
-            ui::print_unknown_subcommand(subcommand)?;
-        },
+        "build" | "test" | "run" => cargo.forward(subcommand)?,
+        "clean" => clean(&cargo, matches)?,
+        "report" => generate_reports(&cargo, matches)?,
+        _ => ui::print_unknown_subcommand(subcommand)?,
     }
 
     Ok(())
@@ -177,8 +167,12 @@ Subcommands:
             (@subcommand clean =>
                 (about: "Clean coverage artifacts")
                 (@setting UnifiedHelpMessage)
-                (@arg gcda_only: --("gcda-only") "Remove the profile data only (*.gcda)")
-                (@arg report: --report "Remove the coverage report too")
+                (@group build =>
+                    (@arg gcda: --gcda "Remove the profile data only (*.gcda)")
+                    (@arg local: --local "Remove the build artifacts in current workspace")
+                    (@arg all_crates: --("all-crates") "Remove build artifacts of all crates")
+                )
+                (@arg report: --report "Remove the coverage report")
             )
             (@subcommand report =>
                 (about: "Generates a coverage report")
@@ -197,9 +191,9 @@ Subcommands:
     ).get_matches()
 }
 
-/// Parses the command line arguments and forwards to [`report::generate`].
+/// Parses the command line arguments and forwards to [`report::generate()`].
 ///
-/// [`report::generate`]: report/fn.generate.html
+/// [`report::generate()`]: report/fn.generate.html
 fn generate_reports(cargo: &Cargo, matches: &ArgMatches) -> Result<()> {
     let allowed_source_types = matches.values_of("include").map_or(SOURCE_TYPE_DEFAULT, |it| SourceType::from_multi_str(it).expect("SourceType"));
 
@@ -219,4 +213,29 @@ fn generate_reports(cargo: &Cargo, matches: &ArgMatches) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Parses the command line arguments and forwards to [`Cargo::clean()`].
+///
+/// [`Cargo::clean()`]: cargo/struct.Cargo.html#method.clean
+fn clean(cargo: &Cargo, matches: &ArgMatches) -> Result<()> {
+    use cargo::*;
+
+    let mut clean_target = CleanTargets::empty();
+
+    if matches.is_present("gcda") {
+        clean_target |= CLEAN_BUILD_GCDA;
+    } else if matches.is_present("local") {
+        clean_target |= CLEAN_BUILD_GCDA | CLEAN_BUILD_GCNO;
+    } else if matches.is_present("all_crates") {
+        clean_target |= CLEAN_BUILD_EXTERNAL | CLEAN_BUILD_GCDA | CLEAN_BUILD_GCNO;
+    }
+    if matches.is_present("report") {
+        clean_target |= CLEAN_REPORT;
+    }
+
+    if clean_target.is_empty() {
+        clean_target = CLEAN_BUILD_GCDA | CLEAN_BUILD_GCNO;
+    }
+    cargo.clean(clean_target)
 }
