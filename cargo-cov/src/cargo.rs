@@ -135,7 +135,12 @@ impl<'a> Cargo<'a> {
         let test_runner_slice: &[&Path] = &[&test_runner];
 
         let target = if let Ok(true) = supports_target_runner(&self.cargo_path) {
-            once((self.target, CargoConfigTarget { runner: test_runner_slice })).collect()
+            once((
+                self.target,
+                CargoConfigTarget {
+                    runner: test_runner_slice,
+                },
+            )).collect()
         } else {
             HashMap::new()
         };
@@ -344,19 +349,17 @@ fn supports_built_in_profiler(rustc: &str, target: &str) -> bool {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .args(
-            &[
-                "-",
-                "-Zprofile",
-                "--crate-name",
-                "___",
-                "--crate-type",
-                "lib",
-                "--target",
-                target,
-                "--out-dir",
-            ],
-        )
+        .args(&[
+            "-",
+            "-Zprofile",
+            "--crate-name",
+            "___",
+            "--crate-type",
+            "lib",
+            "--target",
+            target,
+            "--out-dir",
+        ])
         .arg(dir.path())
         .status()
         .map(|s| s.success())

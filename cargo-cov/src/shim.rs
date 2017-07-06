@@ -79,14 +79,12 @@ pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
         } else {
             cmd.arg("-Cpasses=insert-gcov-profiling").arg("-L").arg(profiler_lib_path).arg("-l").arg(profiler_lib_name);
         }
-        cmd.args(
-            &[
-                "-Clink-dead-code",
-                "-Coverflow-checks=off",
-                "-Cinline-threshold=0",
+        cmd.args(&[
+            "-Clink-dead-code",
+            "-Coverflow-checks=off",
+            "-Cinline-threshold=0",
             // "-Zdebug-macros", // don't enable, makes the gcno graph involving `assert!` even worse.
-            ],
-        );
+        ]);
     }
 
     cmd.args(args);
