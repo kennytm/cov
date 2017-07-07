@@ -137,7 +137,7 @@
 //! }
 //! ```
 
-use error::Result;
+use error::{Result, ResultExt};
 use sourcepath::{SourceType, identify_source_path};
 use template::new as new_template;
 use utils::{clean_dir, parent_3};
@@ -155,14 +155,14 @@ use std::path::{Path, PathBuf};
 /// Entry point of `cargo cov report` subcommand. Renders the coverage report using a template.
 pub fn generate(cov_build_path: &Path, template_name: &OsStr, allowed_source_types: SourceType) -> Result<Option<PathBuf>> {
     let report_path = cov_build_path.with_file_name("report");
-    clean_dir(&report_path)?;
+    clean_dir(&report_path).chain_err(|| "Cannot clean report directory")?;
     create_dir_all(&report_path)?;
 
     let mut interner = Interner::new();
-    let graph = create_graph(cov_build_path, &mut interner)?;
+    let graph = create_graph(cov_build_path, &mut interner).chain_err(|| "Cannot create graph")?;
     let report = graph.report();
 
-    render(&report_path, template_name, allowed_source_types, &report, &interner)
+    render(&report_path, template_name, allowed_source_types, &report, &interner).chain_err(|| "Cannot render report")
 }
 
 /// Creates an analyzed [`Graph`] from all GCNO and GCDA inside the `target/cov/build` folder.
@@ -200,10 +200,10 @@ fn render(report_path: &Path, template_name: &OsStr, allowed_source_types: Sourc
 
     // Read the template configuration.
     template_path.push("config.toml");
-    let mut config_file = File::open(&template_path)?;
+    let mut config_file = File::open(&template_path).chain_err(|| format!("Cannot open template at `{}`", template_path.display()))?;
     let mut config_bytes = Vec::new();
     config_file.read_to_end(&mut config_bytes)?;
-    let config: Config = from_slice(&config_bytes)?;
+    let config: Config = from_slice(&config_bytes).chain_err(|| "Cannot read template configuration")?;
 
     // Copy the static resources if exist.
     template_path.set_file_name("static");
@@ -240,7 +240,7 @@ fn render(report_path: &Path, template_name: &OsStr, allowed_source_types: Sourc
     report_files.sort_by_key(|entry| (entry.source_type, entry.path));
 
     let summary_path = if let Some(summary) = config.summary {
-        Some(write_summary(report_path, &report_files, &tera, &crate_path, &summary)?)
+        Some(write_summary(report_path, &report_files, &tera, &crate_path, &summary).chain_err(|| "Cannot write summary")?)
     } else {
         None
     };
@@ -248,7 +248,7 @@ fn render(report_path: &Path, template_name: &OsStr, allowed_source_types: Sourc
     if let Some(files_config) = config.files {
         tera.add_raw_template("<filename>", files_config.output)?;
         for entry in &report_files {
-            write_file(report_path, interner, entry, &tera, &crate_path, files_config.template)?;
+            write_file(report_path, interner, entry, &tera, &crate_path, files_config.template).chain_err(|| format!("Cannot write file at `{}`", entry.path))?;
         }
     }
 

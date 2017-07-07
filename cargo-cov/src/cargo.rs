@@ -1,7 +1,7 @@
 //! Build environment information for `cargo cov`.
 
 use argparse::SpecialMap;
-use error::{ErrorKind, Result};
+use error::{ErrorKind, Result, ResultExt};
 use lookup::*;
 use shim::move_gcov_files;
 use utils::{CommandExt, clean_dir, set_executable};
@@ -62,14 +62,14 @@ impl<'a> Cargo<'a> {
 
         let manifest_path = match special_args.get("manifest-path") {
             Some(p) => canonicalize(p)?,
-            None => locate_project(&cargo_path)?,
+            None => locate_project(&cargo_path).chain_err(|| "Cargo.toml not found")?,
         };
 
-        let metadata = parse_metadata(&cargo_path, &manifest_path)?;
+        let metadata = parse_metadata(&cargo_path, &manifest_path).chain_err(|| "Cannot parse workspace metadata")?;
         let mut cov_build_path = metadata.target_directory.or_else(|| find_target_path(&manifest_path)).ok_or(ErrorKind::TargetDirectoryNotFound)?;
         cov_build_path.push("cov");
         cov_build_path.push("build");
-        create_dir_all(&cov_build_path)?;
+        create_dir_all(&cov_build_path).chain_err(|| "Cannot prepare coverage build directory")?;
 
         let mut workspace_packages = metadata.workspace_members;
         for pkg_id in &mut workspace_packages {
@@ -80,14 +80,14 @@ impl<'a> Cargo<'a> {
         let target = special_args.get("target").and_then(|s| s.to_str()).unwrap_or(HOST);
         let (profiler_lib_path, profiler_lib_name) = match special_args.get("profiler") {
             Some(&path) => {
-                let (p, n) = split_profiler_lib(Path::new(path))?;
+                let (p, n) = split_profiler_lib(Path::new(path)).chain_err(|| "Cannot parse user-provided profiler library")?;
                 (Cow::Owned(canonicalize(p)?.into_string_lossy()), Cow::Borrowed(n))
             },
             None => {
                 if supports_built_in_profiler(&rustc_path, target) {
                     (Cow::Borrowed("@native"), Cow::Borrowed("@native"))
                 } else {
-                    let (p, n) = find_native_profiler_lib(target)?;
+                    let (p, n) = find_native_profiler_lib(target).chain_err(|| "Native profiler library not found")?;
                     (Cow::Owned(canonicalize(p)?.into_string_lossy()), Cow::Owned(n))
                 }
             },
