@@ -280,7 +280,13 @@ impl<'si, R: Read> Reader<'si, R> {
             is_big_endian: self.is_big_endian,
             interner: self.interner,
         };
-        debug!("record-header: tag = {0:08x}, length = {1} (0x{1:x}), range = 0x{2:x} .. 0x{3:x}", tag, length, self.cursor, self.cursor + length);
+        debug!(
+            "record-header: tag = {0:08x}, length = {1} (0x{1:x}), range = 0x{2:x} .. 0x{3:x}",
+            tag,
+            length,
+            self.cursor,
+            self.cursor + length
+        );
         self.cursor += length;
         Ok((tag, subreader))
     }

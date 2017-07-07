@@ -1,8 +1,8 @@
 chain_one_line_max = 240
 comment_width = 120
-fn_call_width = 240
+fn_call_width = 120
 match_block_trailing_comma = true
-max_width = 65535
+max_width = 320
 reorder_imported_names = true
 reorder_imports = true
 reorder_imports_in_group = true

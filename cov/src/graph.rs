@@ -775,7 +775,10 @@ impl Graph {
     fn add_arc_counts(&mut self, index: FunctionIndex, ac: ArcCounts) -> Result<()> {
         trace!("gcda-arc-counts ({}): {:?}", index.0, ac);
         let function = get_function!(self, index);
-        ensure!(ac.counts.len() == function.arcs.len(), ErrorKind::CountsMismatch("arcs", Type::Gcda, ac.counts.len(), function.arcs.len()));
+        ensure!(
+            ac.counts.len() == function.arcs.len(),
+            ErrorKind::CountsMismatch("arcs", Type::Gcda, ac.counts.len(), function.arcs.len())
+        );
         for (&ei, &new_count) in function.arcs.iter().zip(ac.counts.iter()) {
             let count = &mut self.graph[ei].count;
             match *count {
