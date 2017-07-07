@@ -172,6 +172,7 @@ fn create_graph(cov_build_path: &Path, interner: &mut Interner) -> cov::Result<G
     let mut graph = Graph::default();
 
     for extension in &["gcno", "gcda"] {
+        progress!("Parsing", "*.{} files", extension);
         for entry in read_dir(cov_build_path.join(extension))? {
             let path = entry?.path();
             if path.extension() == Some(OsStr::new(extension)) {
@@ -191,9 +192,8 @@ fn create_graph(cov_build_path: &Path, interner: &mut Interner) -> cov::Result<G
 fn render(report_path: &Path, template_name: &OsStr, allowed_source_types: SourceType, report: &Report, interner: &Interner) -> Result<Option<PathBuf>> {
     use toml::de::from_slice;
 
-    let mut template_path = PathBuf::from(file!());
-    template_path.pop();
-    template_path.set_file_name("res");
+    let mut template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    template_path.push("res");
     template_path.push("templates");
     template_path.push(template_name);
     trace!("using templates at {:?}", template_path);
