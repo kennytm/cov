@@ -212,9 +212,12 @@ impl<'a> Cargo<'a> {
             .env("COV_PROFILER_LIB_PATH", &*self.profiler_lib_path)
             .env("COV_PROFILER_LIB_NAME", &*self.profiler_lib_name)
             .arg(subcommand)
-            .args(&["--target", self.target, "--manifest-path"])
-            .arg(self.manifest_path)
-            .args(self.forward_args);
+            .arg("--manifest-path")
+            .arg(self.manifest_path);
+        if self.target != HOST {
+            cmd.args(&["--target", self.target]);
+        }
+        cmd.args(self.forward_args);
 
         progress!("Delegate", "{:?}", cmd);
 
@@ -245,8 +248,11 @@ impl<'a> Cargo<'a> {
                 let mut cmd = Command::new(&self.cargo_path);
                 cmd.current_dir(&self.cov_build_path)
                     .env("RUSTC", &self.rustc_path) // No need to run our shim.
-                    .args(&["clean", "--target", self.target, "--manifest-path"])
+                    .args(&["clean", "--manifest-path"])
                     .arg(&self.manifest_path);
+                if self.target != HOST {
+                    cmd.args(&["--target", self.target]);
+                }
                 for pkg_name in &self.workspace_packages {
                     cmd.args(&["-p", pkg_name]);
                 }
