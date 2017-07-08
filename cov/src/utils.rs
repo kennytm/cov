@@ -42,15 +42,6 @@ pub fn fill_fixedbitset_with_ones(bitset: &mut FixedBitSet) {
     }
 }
 
-/// Computes the sum of two options. If either input is `None`, the other input is returned.
-pub fn option_add<A: Add<Output = A>>(left: Option<A>, right: Option<A>) -> Option<A> {
-    match (left, right) {
-        (None, r) => r,
-        (l, None) => l,
-        (Some(l), Some(r)) => Some(l + r),
-    }
-}
-
 /// Computes the sum of two 3-tuples.
 pub fn tuple_3_add<A: Add<X>, B: Add<Y>, C: Add<Z>, X, Y, Z>(left: (A, B, C), right: (X, Y, Z)) -> (A::Output, B::Output, C::Output) {
     (left.0 + right.0, left.1 + right.1, left.2 + right.2)
@@ -83,22 +74,5 @@ impl IntoStringLossy for Vec<u8> {
 impl IntoStringLossy for PathBuf {
     fn into_string_lossy(self) -> String {
         self.into_os_string().into_string_lossy()
-    }
-}
-
-/// Equivalent to `(&mut slice[index1], &mut slice[index2])` but satisfies the borrow checker.
-///
-/// # Panic
-///
-/// Panics if `index1 == index2`.
-pub fn get_mut_twice<T>(slice: &mut [T], index1: usize, index2: usize) -> (&mut T, &mut T) {
-    if index1 < index2 {
-        let (left, right) = slice.split_at_mut(index2);
-        (&mut left[index1], &mut right[0])
-    } else if index2 < index1 {
-        let (left, right) = slice.split_at_mut(index1);
-        (&mut right[0], &mut left[index2])
-    } else {
-        panic!("get_mut_twice called with two equal indices {}", index1);
     }
 }

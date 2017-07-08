@@ -13,7 +13,7 @@ use petgraph::graph::{DiGraph, EdgeIndex, EdgeReference, NodeIndex};
 use petgraph::visit::{Dfs, EdgeFiltered, EdgeRef, IntoNodeReferences};
 
 use std::{mem, usize};
-use std::collections::HashMap;
+use std::collections::hash_map::{Entry, HashMap};
 use std::ops::{Index, IndexMut};
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -24,7 +24,8 @@ use std::ops::{Index, IndexMut};
 pub struct Graph {
     version: Version,
     functions: Vec<FunctionInfo>,
-    index: HashMap<FunctionIdentity, FunctionIndex>,
+    gcno_index: HashMap<GcnoFunctionIdentity, FunctionIndex>,
+    gcda_index: HashMap<GcdaFunctionIdentity, FunctionIndex>,
     graph: DiGraph<BlockInfo, ArcInfo>,
 }
 
@@ -72,18 +73,49 @@ impl Graph {
     ///
     /// [`DuplicatedFunction`]: ../error/enum.ErrorKind.html#variant.DuplicatedFunction
     fn merge_gcno(&mut self, gcno: Gcov) -> Result<()> {
-        let mut cur = INVALID_FUNCTION_INDEX;
         let checksum = gcno.stamp;
 
+        let mut fis = Vec::new();
+        // First pass: Collect the structural identity
         for (index, record) in gcno.records.into_iter().enumerate() {
+            macro_rules! last_fi {
+                () => {
+                    match fis.last_mut() {
+                        Some(fi) => &mut fi.1,
+                        None => bail!(Location::RecordIndex(index).wrap_error(ErrorKind::RecordWithoutFunction)),
+                    }
+                }
+            }
+
             match record {
-                Record::Function(ident, function) => cur = Location::RecordIndex(index).wrap(|| self.add_function(checksum, ident, function))?,
-                Record::Blocks(blocks) => self.add_blocks(cur, blocks),
-                Record::Arcs(arcs) => self.add_arcs(cur, arcs),
-                Record::Lines(lines) => self.add_lines(cur, lines),
+                Record::Function(ident, function) => fis.push((ident, GcnoFunctionIdentity::new(function))),
+                Record::Blocks(blocks) => last_fi!().blocks = blocks,
+                Record::Arcs(arcs) => last_fi!().arcs.push(arcs),
+                Record::Lines(lines) => last_fi!().lines.push(lines),
                 _ => trace!("gcno-unknown-record: {:?}", record),
             }
         }
+
+        // Second pass: Actually merge into the graph.
+        let mut gcno_index = mem::replace(&mut self.gcno_index, HashMap::new());
+        // ^ move the GCNO index out temporarily, so that we can mutate `self` in the loop.
+        for (ident, fi) in fis {
+            let gcda_identity = GcdaFunctionIdentity::new(checksum, ident, &fi.function);
+            match gcno_index.entry(fi) {
+                // Existing entry: Just add a GCDA index.
+                Entry::Occupied(entry) => {
+                    self.gcda_index.insert(gcda_identity, *entry.get());
+                },
+                // New entry: Create the new function.
+                Entry::Vacant(entry) => {
+                    let new_index = self.add_function(entry.key());
+                    self.gcda_index.insert(gcda_identity, new_index);
+                    entry.insert(new_index);
+                },
+            }
+        }
+        debug_assert!(self.gcno_index.is_empty());
+        self.gcno_index = gcno_index;
 
         Ok(())
     }
@@ -121,7 +153,6 @@ impl Graph {
     /// This method mainly converts the raw arc counts (branch coverage) to block counts (line coverage). If this is not
     /// called, the report will be empty.
     pub fn analyze(&mut self) {
-        self.merge_identical_functions();
         self.mark_catch_blocks();
         self.mark_unconditional_arcs();
         self.mark_exceptional_blocks();
@@ -137,15 +168,10 @@ impl Graph {
         let mut r = Report::default();
 
         for function in &self.functions {
-            if function.is_valid() {
-                self.report_function(function, &mut r);
-            }
+            self.report_function(function, &mut r);
         }
 
         for (src, block) in self.graph.node_references() {
-            if block.attr.contains(BLOCK_ATTR_INVALID) {
-                continue;
-            }
             if let Some(last_line) = self.report_block(block, &mut r) {
                 let function = &self[block.index];
                 let exit_block = function.exit_block(self.version);
@@ -278,18 +304,19 @@ impl IndexMut<FunctionIndex> for Graph {
     }
 }
 
+/// The identity of a function, looked up when parsing the GCDA format.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-struct FunctionIdentity {
+struct GcdaFunctionIdentity {
     file_checksum: u32,
     ident: Ident,
     lineno_checksum: u32,
     cfg_checksum: u32,
 }
 
-impl FunctionIdentity {
-    fn new(file_checksum: u32, ident: Ident, function: &Function) -> FunctionIdentity {
-        FunctionIdentity {
+impl GcdaFunctionIdentity {
+    fn new(file_checksum: u32, ident: Ident, function: &Function) -> GcdaFunctionIdentity {
+        GcdaFunctionIdentity {
             file_checksum,
             ident,
             lineno_checksum: function.lineno_checksum,
@@ -298,85 +325,31 @@ impl FunctionIdentity {
     }
 }
 
-//}}}
-//----------------------------------------------------------------------------------------------------------------------
-//{{{ Graph analyze
+/// The identity of a function, looked up when parsing the GCNO format.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+struct GcnoFunctionIdentity {
+    function: Function,
+    blocks: Blocks,
+    arcs: Vec<Arcs>,
+    lines: Vec<Lines>,
+}
 
-impl Graph {
-    /// Merge the counts of functions if they are structurally identical.
-    ///
-    /// Two functions are structurally identical if:
-    ///
-    /// * The `lineno_checksum` and `cfg_checksum` are equal
-    /// * The source locations of all lines are equal
-    /// * The `arcs` and `nodes` are sorted-isomorphic.
-    ///
-    /// This check is placed in the analyze phase because the identity of a function spans multiple records. Doing it in
-    /// the merge phase takes the same effort.
-    fn merge_identical_functions(&mut self) {
-        let duplicated_function_indices = self.collect_identical_functions();
-        for function_indices in duplicated_function_indices {
-            self.migrate_identical_functions(&function_indices);
-        }
-    }
-
-    // Group every functions by their structural appearance.
-    fn collect_identical_functions(&self) -> Vec<Vec<FunctionIndex>> {
-        let mut equivalent_function_indices = HashMap::<_, Vec<_>>::with_capacity(self.functions.len());
-        for (func_ident, idx) in &self.index {
-            let func = &self.functions[idx.0];
-            let nodes_identity = func.nodes
-                .iter()
-                .map(|ni| {
-                    let block = &self.graph[*ni];
-                    (block.block, block.attr, &block.lines)
-                })
-                .collect::<Vec<_>>();
-            let arcs_identity = func.arcs
-                .iter()
-                .map(|ei| {
-                    let arc = &self.graph[*ei];
-                    let (src, target) = self.graph.edge_endpoints(*ei).expect("existing edge");
-                    let src_block = self.graph[src].block;
-                    let target_block = self.graph[target].block;
-                    (arc.arc, arc.attr, src_block, target_block)
-                })
-                .collect::<Vec<_>>();
-            let identity = (func_ident.lineno_checksum, func_ident.cfg_checksum, func.source, nodes_identity, arcs_identity);
-            equivalent_function_indices.entry(identity).or_default().push(*idx);
-        }
-        equivalent_function_indices.into_iter().map(|(_, v)| v).collect()
-    }
-
-    // Move the counts of the duplicated functions to the primary function, then mark every node and arc of the
-    // duplicated function as invalid.
-    fn migrate_identical_functions(&mut self, function_indices: &[FunctionIndex]) {
-        let primary_index = function_indices[0];
-        for secondary_index in &function_indices[1..] {
-            let (primary_func, secondary_func) = get_mut_twice(&mut self.functions, primary_index.0, secondary_index.0);
-            // transfer arc counts
-            for (primary_ei, secondary_ei) in primary_func.arcs.iter().zip(secondary_func.arcs.iter()) {
-                let (primary_arc, secondary_arc) = self.graph.index_twice_mut(*primary_ei, *secondary_ei);
-                primary_arc.count = option_add(primary_arc.count, secondary_arc.count);
-                secondary_arc.count = None;
-                secondary_arc.index = INVALID_FUNCTION_INDEX;
-                secondary_arc.attr = ARC_ATTR_INVALID;
-            }
-            // transfer block counts
-            for (primary_ni, secondary_ni) in primary_func.nodes.iter().zip(secondary_func.nodes.iter()) {
-                let (primary_block, secondary_block) = self.graph.index_twice_mut(*primary_ni, *secondary_ni);
-                primary_block.count = option_add(primary_block.count, secondary_block.count);
-                secondary_block.count = None;
-                secondary_block.index = INVALID_FUNCTION_INDEX;
-                secondary_block.attr = BLOCK_ATTR_INVALID;
-                secondary_block.lines.clear();
-            }
-            secondary_func.arcs.clear();
-            secondary_func.nodes.clear();
-            secondary_func.source = None;
+impl GcnoFunctionIdentity {
+    fn new(function: Function) -> GcnoFunctionIdentity {
+        GcnoFunctionIdentity {
+            function,
+            blocks: Blocks { flags: Vec::new() },
+            arcs: Vec::new(),
+            lines: Vec::new(),
         }
     }
 }
+
+
+//}}}
+//----------------------------------------------------------------------------------------------------------------------
+//{{{ Graph analyze
 
 impl Graph {
     /// Marks blocks and arc with attributes associated with throwing exceptions.
@@ -413,7 +386,7 @@ impl Graph {
         let unconditional_edges = graph
             .node_indices()
             .filter_map(|src| {
-                let mut non_fake_edges = graph.edges(src).filter(|edge_ref| !edge_ref.weight().attr.intersects(ARC_ATTR_FAKE | ARC_ATTR_INVALID));
+                let mut non_fake_edges = graph.edges(src).filter(|edge_ref| !edge_ref.weight().attr.contains(ARC_ATTR_FAKE));
                 if let Some(er) = non_fake_edges.next() {
                     if non_fake_edges.next().is_none() {
                         return Some((er.source(), er.target(), er.id(), er.weight().attr));
@@ -495,9 +468,6 @@ impl Graph {
             if let Some(count) = weight.count {
                 block_status[src].outgoing_total_count += count;
                 block_status[dest].incoming_total_count += count;
-            } else if weight.attr.contains(ARC_ATTR_INVALID) {
-                block_status[src].outgoing_invalid_arcs = usize::MAX;
-                block_status[dest].incoming_invalid_arcs = usize::MAX;
             } else {
                 block_status[src].outgoing_invalid_arcs += 1;
                 block_status[dest].incoming_invalid_arcs += 1;
@@ -506,9 +476,6 @@ impl Graph {
 
         // entry and exit blocks are full of invalid arcs.
         for function in &self.functions {
-            if !function.is_valid() {
-                continue;
-            }
             let entry_block = function.entry_block();
             let exit_block = function.exit_block(self.version);
             block_status[entry_block.index()].incoming_invalid_arcs = usize::MAX;
@@ -601,15 +568,10 @@ impl Graph {
     /// Verifies that `propagate_counts`
     fn verify_counts(&self) {
         for (_, block) in self.graph.node_references() {
-            if !block.attr.contains(BLOCK_ATTR_INVALID) {
-                assert!(block.count.is_some());
-            }
+            assert!(block.count.is_some());
         }
         for edge_ref in self.graph.edge_references() {
-            let arc = edge_ref.weight();
-            if !arc.attr.contains(ARC_ATTR_INVALID) {
-                assert!(arc.count.is_some());
-            }
+            assert!(edge_ref.weight().count.is_some());
         }
     }
 
@@ -621,9 +583,6 @@ impl Graph {
 
         let mut stack = Vec::with_capacity(self.functions.len());
         for (i, block) in self.graph.node_weights_mut().enumerate() {
-            if block.attr.contains(BLOCK_ATTR_INVALID) {
-                continue;
-            }
             if block.is_entry_block() {
                 stack.push(NodeIndex::new(i));
             } else {
@@ -673,31 +632,33 @@ macro_rules! get_function {
 }
 
 impl Graph {
-    /// Adds a GCNO function record to the graph.
-    fn add_function(&mut self, checksum: u32, ident: Ident, function: Function) -> Result<FunctionIndex> {
+    /// Adds a GCNO function to the graph.
+    fn add_function(&mut self, fi: &GcnoFunctionIdentity) -> FunctionIndex {
         let new_index = FunctionIndex(self.functions.len());
-        trace!("gcno-add-function #{}@{}: {:?} -> {:?}", ident, checksum, function, new_index);
+        trace!("gcno-add-function {:?} -> {:?}", fi.function.source, new_index);
 
-        let identity = FunctionIdentity::new(checksum, ident, &function);
-        let old_index = self.index.insert(identity, new_index);
-        ensure!(old_index.is_none(), ErrorKind::DuplicatedFunction(checksum, ident));
+        let mut function = FunctionInfo {
+            arcs: Vec::with_capacity(fi.arcs.iter().map(|a| a.arcs.len()).sum()),
+            nodes: Vec::with_capacity(fi.blocks.flags.len()),
+            source: fi.function.source.clone(),
+        };
 
-        self.functions.push(FunctionInfo {
-            source: function.source,
-            ..FunctionInfo::default()
-        });
-        Ok(new_index)
+        self.add_blocks(&mut function, new_index, &fi.blocks);
+        for arcs in &fi.arcs {
+            self.add_arcs(&mut function, new_index, arcs);
+        }
+        for lines in &fi.lines {
+            self.add_lines(&mut function, new_index, lines);
+        }
+
+        self.functions.push(function);
+        new_index
     }
 
     /// Adds a GCNO block list to the graph.
-    fn add_blocks(&mut self, index: FunctionIndex, blocks: Blocks) {
+    fn add_blocks(&mut self, function: &mut FunctionInfo, index: FunctionIndex, blocks: &Blocks) {
         let count = blocks.flags.len();
         trace!("gcno-add-blocks ({}): {} blocks", index.0, count);
-
-        let function = get_function!(self, index);
-
-        // add_function() should ensure the function is empty.
-        debug_assert!(function.nodes.is_empty());
 
         let graph = &mut self.graph;
         function.nodes = blocks
@@ -717,10 +678,9 @@ impl Graph {
     }
 
     /// Adds a GCNO arcs list for a block to the graph.
-    fn add_arcs(&mut self, index: FunctionIndex, arcs: Arcs) {
+    fn add_arcs(&mut self, function: &mut FunctionInfo, index: FunctionIndex, arcs: &Arcs) {
         trace!("gcno-add-arcs ({}): {:?} -> {} dests", index.0, arcs.src_block, arcs.arcs.len());
 
-        let function = get_function!(self, index);
         let src_ni = function.node(arcs.src_block);
 
         // add_function() should ensure the function is empty and thus the block had no arcs.
@@ -744,27 +704,26 @@ impl Graph {
     }
 
     /// Adds a GCNO source lines list for a block to the graph.
-    fn add_lines(&mut self, index: FunctionIndex, lines: Lines) {
+    fn add_lines(&mut self, function: &mut FunctionInfo, index: FunctionIndex, lines: &Lines) {
         trace!("gcno-add-lines ({}): {:?} -> {} lines", index.0, lines.block_number, lines.lines.len());
-        let function = get_function!(self, index);
         let ni = function.node(lines.block_number);
         let block = &mut self.graph[ni];
 
         // add_function() should ensure the function is empty and thus the block had no source info.
         debug_assert!(block.lines.is_empty());
 
-        block.lines = lines.lines;
+        block.lines = lines.lines.clone();
     }
 
-    /// Finds a function given its identity.
+    /// Finds a function given the GCDA identity.
     ///
     /// # Errors
     ///
     /// Returns `MissingFunction` if not found.
     fn find_function(&self, checksum: u32, ident: Ident, function: Function) -> Result<FunctionIndex> {
         trace!("gcda-function #{}@{}: {:?}", ident, checksum, function);
-        let identity = FunctionIdentity::new(checksum, ident, &function);
-        self.index.get(&identity).cloned().ok_or_else(|| ErrorKind::MissingFunction(checksum, ident).into())
+        let identity = GcdaFunctionIdentity::new(checksum, ident, &function);
+        self.gcda_index.get(&identity).cloned().ok_or_else(|| ErrorKind::MissingFunction(checksum, ident).into())
     }
 
     /// Adds the arc counts statistics from a GCDA.
@@ -862,11 +821,6 @@ struct FunctionInfo {
 }
 
 impl FunctionInfo {
-    /// Checks whether the function is valid (has at least 2 blocks)
-    fn is_valid(&self) -> bool {
-        self.nodes.len() >= 2
-    }
-
     /// Converts the raw block index into the node index of the graph.
     fn node(&self, block_index: BlockIndex) -> NodeIndex {
         self.nodes[usize::from(block_index)]

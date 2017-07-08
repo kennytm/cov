@@ -365,9 +365,6 @@ bitflags! {
         /// Equivalent to the `GCOV_BLOCK_UNEXPECTED` flag.
         const BLOCK_ATTR_UNEXPECTED = 2;
 
-        /// The block is invalid, because it has been merged to another function.
-        const BLOCK_ATTR_INVALID = 0x800;
-
         /// The block ends with a function call which may throw an exception.
         const BLOCK_ATTR_CALL_SITE = 0x1000;
 
@@ -453,9 +450,6 @@ bitflags! {
 
         /// The arc is an unconditional branch.
         const ARC_ATTR_UNCONDITIONAL = 0x80;
-
-        /// The arc is invalid, because it has been merged to another function.
-        const ARC_ATTR_INVALID = 0x800;
     }
 }
 

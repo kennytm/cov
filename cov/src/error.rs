@@ -66,13 +66,9 @@ error_chain! {
             display("function from *.gcda cannot be found in the *.gcno (checksum: {}, ident: {})", file_checksum, ident)
         }
 
-        /// The GCNO provides information about a function which has already been merged into the [`Graph`]. The error
-        /// typically arises when merging the same GCNO twice.
-        ///
-        /// [`Graph`]: ../graph/struct.Graph.html
-        DuplicatedFunction(file_checksum: u32, ident: Ident) {
-            description("duplicated function")
-            display("the same function is added twice (checksum: {}, ident: {}), is the same *.gcno added twice?", file_checksum, ident)
+        /// Encountered a GCNO record without the corresponding function. This means the GCNO file is corrupt.
+        RecordWithoutFunction {
+            description("encountered a record without the corresponding function")
         }
 
         /// The expected number of profilable arcs on the GCDA and GCNO differs.
