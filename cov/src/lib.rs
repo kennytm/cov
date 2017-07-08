@@ -80,6 +80,8 @@ extern crate shawshank;
 
 #[macro_use]
 pub mod intern;
+#[cfg(feature = "serde")]
+pub mod deserializer;
 mod utils;
 pub mod error;
 pub mod raw;
@@ -87,6 +89,8 @@ pub mod reader;
 pub mod graph;
 pub mod report;
 
+#[cfg(feature = "serde")]
+pub use deserializer::deserializer_with_interner;
 pub use error::{ErrorKind, Result};
 pub use graph::Graph;
 pub use intern::{Interner, Symbol};

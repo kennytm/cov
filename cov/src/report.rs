@@ -22,7 +22,7 @@ derive_serialize_with_interner! {
     ///
     /// [`Graph`]: ../graph/struct.Graph.html
     #[derive(Clone, PartialEq, Eq, Debug, Default)]
-    #[cfg_attr(feature="serde", derive(Serialize))]
+    #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
     pub struct Report {
         /// Files in the report.
         pub files: HashMap<Symbol, File>,
@@ -32,7 +32,7 @@ derive_serialize_with_interner! {
 derive_serialize_with_interner! {
     /// Coverage information about a source file.
     #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
-    #[cfg_attr(feature="serde", derive(Serialize))]
+    #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
     pub struct File {
         /// Lines in the file.
         pub lines: BTreeMap<u32, Line>,
@@ -70,7 +70,7 @@ impl File {
 derive_serialize_with_interner! {
     /// Coverage information about a source line of code.
     #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
-    #[cfg_attr(feature="serde", derive(Serialize))]
+    #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
     pub struct Line {
         /// Number of times this line is executed.
         ///
@@ -88,7 +88,7 @@ derive_serialize_with_interner! {
 derive_serialize_with_interner! {
     /// Coverage information about a branch.
     #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
-    #[cfg_attr(feature="serde", derive(Serialize))]
+    #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
     pub struct Branch {
         /// Number of times this branch is taken.
         pub count: u64,
@@ -110,7 +110,7 @@ derive_serialize_with_interner! {
 derive_serialize_with_interner! {
     /// Coverage information about a function.
     #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
-    #[cfg_attr(feature="serde", derive(Serialize))]
+    #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
     pub struct Function {
         /// Name of the function.
         pub name: Symbol,
@@ -128,7 +128,7 @@ derive_serialize_with_interner! {
 
 /// Statistical summary of a function.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FunctionSummary {
     /// Number of basic blocks in the function (excluding the enter- and exit-blocks).
     pub blocks_count: usize,
@@ -154,7 +154,7 @@ pub struct FunctionSummary {
 
 /// Statistical summary of a file.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FileSummary {
     /// Number of lines that can be profiled.
     pub lines_count: usize,

@@ -48,9 +48,14 @@
 //! # Ok(()) }
 //! ```
 //!
+//! ## Deserialization
+//!
+//! See [`deserializer_with_interner()`] for how to deserialize a string back to a [`Symbol`].
+//!
 //! [`Interner`]: ./struct.Interner.html
 //! [`Symbol`]: ./struct.Symbol.html
 //! [`with_interner()`]: ./trait.SerializeWithInterner.html#method.with_interner
+//! [`deserializer_with_interner()`]: ../deserializer/fn.deserializer_with_interner.html
 
 use num_traits::{Bounded, FromPrimitive, ToPrimitive};
 #[cfg(feature = "serde")]
@@ -233,9 +238,9 @@ impl<'a> Iterator for Iter<'a> {
 /// [`SerializeWithInterner::with_interner()`]: ./trait.SerializeWithInterner.html#method.with_interner
 #[cfg(feature = "serde")]
 #[derive(Debug)]
-pub struct WithInterner<'si, 'a, T: 'a + ?Sized> {
+pub struct WithInterner<'si, T> {
     interner: &'si Interner,
-    value: &'a T,
+    value: T,
 }
 
 /// A data structure that may contain [`Symbol`]s, which should be serialized as strings.
@@ -248,7 +253,7 @@ pub trait SerializeWithInterner {
     /// Returns a serializable object which writes out [`Symbol`]s as strings instead of numbers.
     ///
     /// [`Symbol`]: ./struct.Symbol.html
-    fn with_interner<'si, 'a>(&'a self, interner: &'si Interner) -> WithInterner<'si, 'a, Self> {
+    fn with_interner<'si>(&self, interner: &'si Interner) -> WithInterner<'si, &Self> {
         WithInterner {
             interner: interner,
             value: self,
@@ -313,7 +318,7 @@ pub trait SerializeWithInterner {
 }
 
 #[cfg(feature = "serde")]
-impl<'si, 'a, T: 'a + SerializeWithInterner + ?Sized> Serialize for WithInterner<'si, 'a, T> {
+impl<'si, T: SerializeWithInterner> Serialize for WithInterner<'si, T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.value.serialize_with_interner(serializer, self.interner)
     }
@@ -358,6 +363,13 @@ impl<T: SerializeWithInterner> SerializeWithInterner for Option<T> {
 }
 
 #[cfg(feature = "serde")]
+impl<'a, T: 'a + SerializeWithInterner + ?Sized> SerializeWithInterner for &'a T {
+    fn serialize_with_interner<S: Serializer>(&self, serializer: S, interner: &Interner) -> Result<S::Ok, S::Error> {
+        (**self).serialize_with_interner(serializer, interner)
+    }
+}
+
+#[cfg(feature = "serde")]
 macro_rules! count_fields {
     () => { 0 };
     ($a:ident $($tail:ident)*) => { count_fields!($($tail)*) + 1 };
@@ -383,7 +395,7 @@ macro_rules! derive_serialize_with_interner {
             )+
         }
 
-        #[cfg(feature="serde")]
+        #[cfg(feature = "serde")]
         impl SerializeWithInterner for $struct_name {
             fn serialize_with_interner<S: Serializer>(&self, serializer: S, interner: &Interner) -> ::std::result::Result<S::Ok, S::Error> {
                 use serde::ser::SerializeStruct;
@@ -399,7 +411,7 @@ macro_rules! derive_serialize_with_interner {
     // directly forward to Serialize for types that do not contain Symbol.
     (direct: $($ty:ty),*) => {
         $(
-            #[cfg(feature="serde")]
+            #[cfg(feature = "serde")]
             impl SerializeWithInterner for $ty {
                 fn serialize_with_interner<S: Serializer>(&self, serializer: S, _: &Interner) -> ::std::result::Result<S::Ok, S::Error> {
                     self.serialize(serializer)
