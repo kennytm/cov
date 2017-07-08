@@ -33,11 +33,11 @@
 //!
 //! // merge the coverage statistics.
 //! // note: merge all gcno before gcda.
-//! graph.merge(Gcov::open("test-data/trivial.clang.gcno", &mut interner)?)?;
-//! graph.merge(Gcov::open("test-data/trivial.rustc.gcno", &mut interner)?)?;
+//! graph.merge(Gcov::open("test-data/trivial.clang/x.gcno", &mut interner)?)?;
+//! graph.merge(Gcov::open("test-data/trivial.rustc/x.gcno", &mut interner)?)?;
 //!
-//! graph.merge(Gcov::open("test-data/trivial.clang.gcda", &mut interner)?)?;
-//! graph.merge(Gcov::open("test-data/trivial.rustc.gcda", &mut interner)?)?;
+//! graph.merge(Gcov::open("test-data/trivial.clang/x.gcda", &mut interner)?)?;
+//! graph.merge(Gcov::open("test-data/trivial.rustc/x.gcda", &mut interner)?)?;
 //!
 //! // analyze the graph (if you skip this step, the report will be empty)
 //! graph.analyze();

@@ -30,7 +30,7 @@ use std::result::Result as StdResult;
 /// # fn main() { run().unwrap(); }
 /// # fn run() -> Result<()> {
 /// let mut interner = Interner::new();
-/// let file = File::open("test-data/trivial.clang.gcno")?;
+/// let file = File::open("test-data/trivial.clang/x.gcno")?;
 ///
 /// // read the header.
 /// let mut reader = Reader::new(file, &mut interner)?;

@@ -1,0 +1,29 @@
+{
+    "files": {
+        "x.cpp": {
+            "lines": {
+                "1": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                }
+            },
+            "functions": [
+                {
+                    "name": "main",
+                    "line": 1,
+                    "column": 0,
+                    "summary": {
+                        "blocks_count": 2,
+                        "blocks_executed": 2,
+                        "entry_count": 1,
+                        "exit_count": 1,
+                        "branches_count": 0,
+                        "branches_executed": 0,
+                        "branches_taken": 0
+                    }
+                }
+            ]
+        }
+    }
+}

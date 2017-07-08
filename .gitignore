@@ -2,3 +2,6 @@ target/
 **/*.rs.bk
 *.dSYM
 Cargo.lock
+x.*.gcov
+x.html
+x.*.html

@@ -25,14 +25,22 @@ serde = { version = "1.0", optional = true, features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 shawshank = "0.2"
 
+[dev-dependencies]
+diff = "0.1"
+termcolor = "0.3"
+
 [features]
 default = ["serde", "serde_json"]
 
 [[example]]
 name = "dump"
-required-features = ["serde_json", "env_logger"]
+required-features = ["serde", "serde_json", "env_logger"]
 
 [[example]]
 name = "report"
-required-features = ["serde_json", "env_logger"]
+required-features = ["serde", "serde_json", "env_logger"]
 
+[[test]]
+name = "gcov"
+harness = false
+required-features = ["serde", "serde_json"]

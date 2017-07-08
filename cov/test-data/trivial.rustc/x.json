@@ -1,0 +1,29 @@
+{
+    "files": {
+        "x.rs": {
+            "lines": {
+                "1": {
+                    "count": 2,
+                    "attr": 0,
+                    "branches": []
+                }
+            },
+            "functions": [
+                {
+                    "name": "_ZN1x4mainE",
+                    "line": 1,
+                    "column": 0,
+                    "summary": {
+                        "blocks_count": 1,
+                        "blocks_executed": 1,
+                        "entry_count": 1,
+                        "exit_count": 1,
+                        "branches_count": 0,
+                        "branches_executed": 0,
+                        "branches_taken": 0
+                    }
+                }
+            ]
+        }
+    }
+}
