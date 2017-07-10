@@ -63,12 +63,13 @@ def build():
             '--directory', '.',
             '--gcov-tool', builder.gcov,
             '--capture',
+            '--ignore-errors', 'source',
             '--rc', 'geninfo_checksum=1',
             '--rc', 'geninfo_gcov_all_blocks=1',
             '--rc', 'lcov_branch_coverage=1',
             '-o', 'x.info',
             '-q',
-        ], cwd=out_dir, check=True)
+        ], cwd=out_dir, check=True, stderr=subprocess.DEVNULL)
         subprocess.run([
             'genhtml',
             '-o', '.',
@@ -81,6 +82,7 @@ def build():
             '--gcov-executable=' + builder.gcov,
             '-r', '.',
             '-b',
+            r'--gcov-filter=x\.',
             '--html',
             '--html-details',
             '-o', 'x.html',
@@ -89,12 +91,12 @@ def build():
             builder.gcov,
             '-a', '-b', '-c', '-f', '-p', '-u',
             'x' + builder.ext,
-        ], cwd=out_dir, check=True, stdout=subprocess.DEVNULL)
+        ], cwd=out_dir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         for filename in ('x.gcda', 'x.gcno'):
             src_path = os.path.join(out_dir, filename)
             dst_path = os.path.join(directory, filename)
-            os.link(src_path, dst_path)
+            os.rename(src_path, dst_path)
 
 
 def clean():

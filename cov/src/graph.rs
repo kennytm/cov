@@ -14,6 +14,7 @@ use petgraph::visit::{Dfs, EdgeFiltered, EdgeRef, IntoNodeReferences};
 
 use std::{io, mem, usize};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::collections::hash_map::{Entry, HashMap};
 use std::ops::{Index, IndexMut};
 
@@ -854,7 +855,12 @@ impl Graph {
     /// Writes out the graph as Graphvis `*.dot` format.
     ///
     /// This is mainly intended for debugging.
-    pub fn write_dot<W: io::Write>(&self, mut writer: W) -> io::Result<()> {
+    ///
+    /// Only functions with filename matching the input `filename` symbol will be printed. If the `filename` is
+    /// [`UNKNOWN_SYMBOL`], however, all nodes will be printed.
+    ///
+    /// [`UNKNOWN_SYMBOL`]: ../intern/const.UNKNOWN_SYMBOL.html
+    pub fn write_dot<W: io::Write>(&self, filename: Symbol, mut writer: W) -> io::Result<()> {
         fn count_to_color_label(count: Option<u64>) -> (&'static str, Cow<'static, str>) {
             match count {
                 Some(0) => ("red", Cow::Borrowed("0")),
@@ -863,20 +869,27 @@ impl Graph {
             }
         }
 
-
         writeln!(writer, "digraph {{\n\tnode[shape=plain]")?;
+        let mut allowed_nodes = HashSet::new();
         for (ni, block) in self.graph.node_references() {
             let function = &self[block.index];
+            if filename != UNKNOWN_SYMBOL && filename != function.source.map(|a| a.filename).unwrap_or(UNKNOWN_SYMBOL) {
+                continue;
+            }
+            allowed_nodes.insert(ni);
+
             let (color, label) = count_to_color_label(block.count);
             let line = if ni == function.entry_block() {
                 "ENTRY".to_owned()
             } else if ni == function.exit_block(self.version) {
                 "EXIT".to_owned()
             } else {
-                match block.iter_lines().next() {
-                    Some((_, line)) => format!("line {}", line),
-                    None => "???".to_owned(),
+                let mut s = String::new();
+                for (i, (_, line)) in block.iter_lines().enumerate() {
+                    use std::fmt::Write;
+                    write!(s, "{}{}", if i == 0 { '#' } else { ',' }, line).expect(":(");
                 }
+                s
             };
             writeln!(
                 writer,
@@ -899,8 +912,14 @@ impl Graph {
             )?;
         }
         for edge_ref in self.graph.edge_references() {
-            let src = edge_ref.source().index();
+            let src = edge_ref.source();
+            if !allowed_nodes.contains(&src) {
+                continue;
+            }
+
+            let src = src.index();
             let dest = edge_ref.target().index();
+
             let arc = edge_ref.weight();
             let (font_color, label) = count_to_color_label(arc.count);
             let (style, color, weight) = if arc.attr.contains(ARC_ATTR_FAKE) {
