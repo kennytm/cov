@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import subprocess
-import tempfile
 import os
 import os.path
 import sys
 import collections
+import shutil
 
 Builder = collections.namedtuple('Builder', ['ext', 'cmd', 'gcov'])
 
@@ -27,52 +27,91 @@ BUILDERS = {
     ),
 }
 
-MOVE_EXT = {'.gcov', '.gcda', '.gcno', '.html'}
-
 def build():
     for directory in os.listdir('.'):
         (base, ext) = os.path.splitext(directory)
         builder = BUILDERS.get(ext) # type: Builder
         if not builder:
             continue
-        if os.path.isfile(os.path.join(directory, 'x.gcda')):
+
+        out_dir = os.path.join(directory, 'build')
+        if os.path.isdir(out_dir):
             print('Fresh', directory)
             continue
+
         print('Rebuilding', directory)
-        with tempfile.TemporaryDirectory() as out_dir:
-            src_path = os.path.join('src', base + builder.ext)
-            dst_path = os.path.join(out_dir, 'x' + builder.ext)
+        os.mkdir(out_dir)
+
+        src_path = os.path.join('src', base + builder.ext)
+        dst_path = os.path.join(out_dir, 'x' + builder.ext)
+        os.link(src_path, dst_path)
+        subprocess.run(builder.cmd + [
+            '-o', 'x',
+            'x' + builder.ext,
+        ], cwd=out_dir, check=True)
+        subprocess.run([
+            'lcov',
+            '--base-directory', '.',
+            '--directory', '.',
+            '-zerocounters',
+            '-q',
+        ], cwd=out_dir, check=True)
+        subprocess.run(['./x'], cwd=out_dir, check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([
+            'lcov',
+            '--base-directory', '.',
+            '--directory', '.',
+            '--gcov-tool', builder.gcov,
+            '--capture',
+            '--rc', 'geninfo_checksum=1',
+            '--rc', 'geninfo_gcov_all_blocks=1',
+            '--rc', 'lcov_branch_coverage=1',
+            '-o', 'x.info',
+            '-q',
+        ], cwd=out_dir, check=True)
+        subprocess.run([
+            'genhtml',
+            '-o', '.',
+            '--function-coverage',
+            '--branch-coverage',
+            'x.info',
+        ], cwd=out_dir, check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([
+            'gcovr',
+            '--gcov-executable=' + builder.gcov,
+            '-r', '.',
+            '-b',
+            '--html',
+            '--html-details',
+            '-o', 'x.html',
+        ], cwd=out_dir, check=True)
+        subprocess.run([
+            builder.gcov,
+            '-a', '-b', '-c', '-f', '-p', '-u',
+            'x' + builder.ext,
+        ], cwd=out_dir, check=True, stdout=subprocess.DEVNULL)
+
+        for filename in ('x.gcda', 'x.gcno'):
+            src_path = os.path.join(out_dir, filename)
+            dst_path = os.path.join(directory, filename)
             os.link(src_path, dst_path)
-            subprocess.run(builder.cmd + [
-                '-o', 'x',
-                'x' + builder.ext,
-            ], cwd=out_dir, check=True)
-            subprocess.run([
-                os.path.join(out_dir, 'x'),
-            ], cwd=out_dir, check=True)
-            subprocess.run([
-                'gcovr',
-                '--gcov-executable=' + builder.gcov,
-                '-r', '.',
-                '-k',
-                '-b',
-                '--html',
-                '--html-details',
-                '-o', 'x.html',
-            ], cwd=out_dir, check=True)
-            for filename in os.listdir(out_dir):
-                ext = os.path.splitext(filename)[1]
-                if ext in MOVE_EXT:
-                    src_path = os.path.join(out_dir, filename)
-                    dst_path = os.path.join(directory, filename)
-                    os.rename(src_path, dst_path)
 
 
 def clean():
-    for directory, _, filenames in os.walk('.'):
-        for filename in filenames:
-            if os.path.splitext(filename)[1] in MOVE_EXT:
-                os.remove(os.path.join(directory, filename))
+    for filename in os.listdir('.'):
+        if os.path.isdir(filename):
+            try:
+                os.remove(os.path.join(filename, 'x.gcno'))
+            except FileNotFoundError:
+                pass
+            try:
+                os.remove(os.path.join(filename, 'x.gcda'))
+            except FileNotFoundError:
+                pass
+            try:
+                shutil.rmtree(os.path.join(filename, 'build'))
+            except FileNotFoundError:
+                pass
 
 
 for directory in os.listdir('.'):
