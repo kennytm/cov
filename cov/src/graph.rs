@@ -12,7 +12,8 @@ use petgraph::Direction;
 use petgraph::graph::{DiGraph, EdgeIndex, EdgeReference, NodeIndex};
 use petgraph::visit::{Dfs, EdgeFiltered, EdgeRef, IntoNodeReferences};
 
-use std::{mem, usize};
+use std::{io, mem, usize};
+use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
 use std::ops::{Index, IndexMut};
 
@@ -197,8 +198,8 @@ impl Graph {
         let entry_block = function.entry_block();
         let exit_block = function.exit_block(self.version);
 
-        let blocks_count = function.nodes.len() - 2;
-        let blocks_executed = function.nodes.iter().filter(|&&ni| ni != entry_block && ni != exit_block && self.graph[ni].count > Some(0)).count();
+        let blocks_count = function.nodes.len();
+        let blocks_executed = function.nodes.iter().filter(|ni| self.graph[**ni].count > Some(0)).count();
 
         let (branches_count, branches_executed, branches_taken) = function
             .arcs
@@ -206,6 +207,7 @@ impl Graph {
             .filter_map(|&ei| {
                 let graph = &self.graph;
                 let arc = &graph[ei];
+                println!("CHECKING ARC: {:?} = {:?}", arc.attr, arc.count);
                 if arc.attr.contains(ARC_ATTR_UNCONDITIONAL) {
                     return None;
                 }
@@ -839,6 +841,89 @@ impl FunctionInfo {
             self.nodes.len() - 1
         };
         self.nodes[index]
+    }
+}
+
+//}}}
+//----------------------------------------------------------------------------------------------------------------------
+//{{{ Graphvis
+
+impl Graph {
+    /// Writes out the graph as Graphvis `*.dot` format.
+    ///
+    /// This is mainly intended for debugging.
+    pub fn write_dot<W: io::Write>(&self, mut writer: W) -> io::Result<()> {
+        fn count_to_color_label(count: Option<u64>) -> (&'static str, Cow<'static, str>) {
+            match count {
+                Some(0) => ("red", Cow::Borrowed("0")),
+                Some(c) => ("darkgreen", Cow::Owned(c.to_string())),
+                None => ("gray", Cow::Borrowed("?")),
+            }
+        }
+
+
+        writeln!(writer, "digraph {{\n\tnode[shape=plain]")?;
+        for (ni, block) in self.graph.node_references() {
+            let function = &self[block.index];
+            let (color, label) = count_to_color_label(block.count);
+            let line = if ni == function.entry_block() {
+                "ENTRY".to_owned()
+            } else if ni == function.exit_block(self.version) {
+                "EXIT".to_owned()
+            } else {
+                match block.iter_lines().next() {
+                    Some((_, line)) => format!("line {}", line),
+                    None => "???".to_owned(),
+                }
+            };
+            writeln!(
+                writer,
+                "\t{} [label=<\
+                 <table cellspacing=\"0\">\
+                 <tr>\
+                 <td rowspan=\"2\"><font color=\"{}\">{}</font></td>\
+                 <td><font point-size=\"9\">block {}</font></td>\
+                 </tr>\
+                 <tr>\
+                 <td><font point-size=\"9\">{}</font></td>\
+                 </tr>\
+                 </table>\
+                 >]",
+                ni.index(),
+                color,
+                label,
+                block.block,
+                line,
+            )?;
+        }
+        for edge_ref in self.graph.edge_references() {
+            let src = edge_ref.source().index();
+            let dest = edge_ref.target().index();
+            let arc = edge_ref.weight();
+            let (font_color, label) = count_to_color_label(arc.count);
+            let (style, color, weight) = if arc.attr.contains(ARC_ATTR_FAKE) {
+                ("dotted", "green", 0)
+            } else if arc.attr.contains(ARC_ATTR_FALLTHROUGH) {
+                ("solid", "blue", 100)
+            } else {
+                ("solid", "black", 10)
+            };
+            writeln!(
+                writer,
+                "\t{} -> {} [style={}, color={}, weight={}, constraint={}, fontcolor=\"{}\", label=<{}<font point-size=\"9\">({:02x}h)</font>>]",
+                src,
+                dest,
+                style,
+                color,
+                weight,
+                !arc.attr.contains(ARC_ATTR_FAKE),
+                font_color,
+                label,
+                arc.attr,
+            )?;
+        }
+        writeln!(writer, "}}")?;
+        Ok(())
     }
 }
 

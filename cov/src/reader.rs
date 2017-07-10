@@ -243,8 +243,7 @@ impl<'si, R: Read> Reader<'si, R> {
                 ARCS_TAG => Record::Arcs(subreader.parse_arcs()?),
                 LINES_TAG => Record::Lines(subreader.parse_lines()?),
                 COUNTER_BASE_TAG => Record::ArcCounts(subreader.parse_arc_counts()?),
-                OBJECT_SUMMARY_TAG |
-                PROGRAM_SUMMARY_TAG => Record::Summary(subreader.parse_summary()?),
+                OBJECT_SUMMARY_TAG | PROGRAM_SUMMARY_TAG => Record::Summary(subreader.parse_summary()?),
                 EOF_TAG => bail!(ErrorKind::Eof),
                 tag => bail!(Location::Cursor(cursor).wrap_error(ErrorKind::UnknownTag(tag.0))),
             })
