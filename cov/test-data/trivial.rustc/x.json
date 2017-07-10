@@ -14,8 +14,8 @@
                     "line": 1,
                     "column": 0,
                     "summary": {
-                        "blocks_count": 1,
-                        "blocks_executed": 1,
+                        "blocks_count": 3,
+                        "blocks_executed": 3,
                         "entry_count": 1,
                         "exit_count": 1,
                         "branches_count": 0,

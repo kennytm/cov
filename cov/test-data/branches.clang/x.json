@@ -1,0 +1,89 @@
+{
+    "files": {
+        "x.cpp": {
+            "lines": {
+                "3": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": [
+                        {
+                            "count": 0,
+                            "attr": 0,
+                            "filename": "x.cpp",
+                            "line": 9,
+                            "column": 0
+                        },
+                        {
+                            "count": 1,
+                            "attr": 0,
+                            "filename": "x.cpp",
+                            "line": 4,
+                            "column": 0
+                        }
+                    ]
+                },
+                "4": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                },
+                "5": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": [
+                        {
+                            "count": 1,
+                            "attr": 0,
+                            "filename": "x.cpp",
+                            "line": 8,
+                            "column": 0
+                        },
+                        {
+                            "count": 0,
+                            "attr": 0,
+                            "filename": "x.cpp",
+                            "line": 6,
+                            "column": 0
+                        }
+                    ]
+                },
+                "6": {
+                    "count": 0,
+                    "attr": 0,
+                    "branches": []
+                },
+                "7": {
+                    "count": 0,
+                    "attr": 0,
+                    "branches": []
+                },
+                "8": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                },
+                "9": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                }
+            },
+            "functions": [
+                {
+                    "name": "main",
+                    "line": 2,
+                    "column": 0,
+                    "summary": {
+                        "blocks_count": 7,
+                        "blocks_executed": 6,
+                        "entry_count": 1,
+                        "exit_count": 1,
+                        "branches_count": 4,
+                        "branches_executed": 4,
+                        "branches_taken": 2
+                    }
+                }
+            ]
+        }
+    }
+}

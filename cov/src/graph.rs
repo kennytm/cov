@@ -201,19 +201,21 @@ impl Graph {
         let blocks_count = function.nodes.len();
         let blocks_executed = function.nodes.iter().filter(|ni| self.graph[**ni].count > Some(0)).count();
 
+        // Do not use `function.arcs` here, the number of arcs will be under-estimating for gcc7
+        // since non-fall-through arcs are not instrumented.
+
         let (branches_count, branches_executed, branches_taken) = function
-            .arcs
+            .nodes
             .iter()
-            .filter_map(|&ei| {
-                let graph = &self.graph;
-                let arc = &graph[ei];
-                println!("CHECKING ARC: {:?} = {:?}", arc.attr, arc.count);
-                if arc.attr.contains(ARC_ATTR_UNCONDITIONAL) {
+            .flat_map(|ni| self.graph.edges(*ni))
+            .filter_map(|er| {
+                let arc = er.weight();
+                if arc.attr.intersects(ARC_ATTR_UNCONDITIONAL | ARC_ATTR_FAKE) {
                     return None;
                 }
                 let arc_taken = arc.count > Some(0);
-                let src = graph.edge_endpoints(ei).expect("valid edge").0;
-                let src_executed = graph[src].count > Some(0);
+                let src = er.source();
+                let src_executed = self.graph[src].count > Some(0);
                 Some((1, src_executed as usize, arc_taken as usize))
             })
             .fold((0, 0, 0), tuple_3_add);
