@@ -253,7 +253,7 @@ impl SerializeWithInterner for Record {
                 state.serialize_field(&function.with_interner(interner))?;
                 state.end()
             },
-            Record::Lines(ref lines) => serializer.serialize_newtype_variant("Record", 3, "Lines", lines),
+            Record::Lines(ref lines) => serializer.serialize_newtype_variant("Record", 3, "Lines", &lines.with_interner(interner)),
             _ => self.serialize(serializer),
         }
     }
