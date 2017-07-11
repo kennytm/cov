@@ -935,6 +935,9 @@ impl Graph {
                     use std::fmt::Write;
                     write!(s, "{}{}", if i == 0 { '#' } else { ',' }, line).expect(":(");
                 }
+                if s.is_empty() {
+                    s.push('?');
+                }
                 s
             };
             writeln!(
@@ -943,7 +946,7 @@ impl Graph {
                  <table cellspacing=\"0\">\
                  <tr>\
                  <td rowspan=\"2\"><font color=\"{}\">{}</font></td>\
-                 <td><font point-size=\"9\">block {}</font></td>\
+                 <td><font point-size=\"9\">@{}</font></td>\
                  </tr>\
                  <tr>\
                  <td><font point-size=\"9\">{}</font></td>\
