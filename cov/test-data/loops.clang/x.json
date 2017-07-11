@@ -1,0 +1,80 @@
+{
+    "files": {
+        "x.cpp": {
+            "functions": [{
+                "column": 0,
+                "line": 2,
+                "name": "main",
+                "summary": {
+                    "blocks_count": 11,
+                    "blocks_executed": 11,
+                    "branches_count": 4,
+                    "branches_executed": 4,
+                    "branches_taken": 4,
+                    "entry_count": 1,
+                    "exit_count": 1
+                }
+            }],
+            "lines": {
+                "3": {
+                    "attr": 0,
+                    "branches": [{
+                            "attr": 0,
+                            "column": 0,
+                            "count": 1,
+                            "filename": "x.cpp",
+                            "line": 8
+                        },
+                        {
+                            "attr": 0,
+                            "column": 0,
+                            "count": 101,
+                            "filename": "x.cpp",
+                            "line": 4
+                        }
+                    ],
+                    "count": 102
+                },
+                "4": {
+                    "attr": 0,
+                    "branches": [{
+                            "attr": 0,
+                            "column": 0,
+                            "count": 101,
+                            "filename": "x.cpp",
+                            "line": 7
+                        },
+                        {
+                            "attr": 0,
+                            "column": 0,
+                            "count": 5050,
+                            "filename": "x.cpp",
+                            "line": 5
+                        }
+                    ],
+                    "count": 5151
+                },
+                "5": {
+                    "attr": 0,
+                    "branches": [],
+                    "count": 5050
+                },
+                "6": {
+                    "attr": 0,
+                    "branches": [],
+                    "count": 5050
+                },
+                "7": {
+                    "attr": 0,
+                    "branches": [],
+                    "count": 101
+                },
+                "8": {
+                    "attr": 0,
+                    "branches": [],
+                    "count": 1
+                }
+            }
+        }
+    }
+}
