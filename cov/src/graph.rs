@@ -177,6 +177,7 @@ impl Graph {
             if let Some(last_line) = self.report_block(block, &mut r) {
                 let function = &self[block.index];
                 let exit_block = function.exit_block(self.version);
+                // BTreeMap does not have IndexMut: See https://github.com/rust-lang/rust/issues/32170
                 let file = r.files.get_mut(&last_line.0).unwrap();
                 let branches = &mut file.lines.get_mut(&last_line.1).unwrap().branches;
                 for edge_ref in self.graph.edges(src) {
