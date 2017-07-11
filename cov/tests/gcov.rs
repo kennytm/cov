@@ -7,6 +7,7 @@ use cov::*;
 use serde_json::{Value, from_reader, to_value, to_string_pretty};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
+use std::env::args_os;
 use std::ffi::OsStr;
 use std::fs::{File, read_dir};
 use std::io::{self, Write};
@@ -24,6 +25,8 @@ fn run() -> io::Result<()> {
     let stdout = StandardStream::stdout(ColorChoice::Auto);
     let mut lock = stdout.lock();
 
+    let filter = args_os().nth(1);
+
     for entry in read_dir("test-data")? {
         let entry = entry?;
         let path = entry.path();
@@ -31,7 +34,11 @@ fn run() -> io::Result<()> {
             if allowed_extensions.contains(&extension) && entry.file_type()?.is_dir() {
                 write!(lock, "test {} ... ", path.display())?;
                 lock.flush()?;
-                if !print_test_result(&mut lock, test(&path))? {
+                if filter.is_some() && path.file_name() != filter.as_ref().map(|x| &**x) {
+                    lock.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
+                    writeln!(lock, "ignored")?;
+                    lock.reset()?;
+                } else if !print_test_result(&mut lock, test(&path))? {
                     failed_tests += 1;
                 }
             }
