@@ -78,7 +78,7 @@
                     "branches": []
                 },
                 "8": {
-                    "count": 2,
+                    "count": 1,
                     "attr": 0,
                     "branches": [
                         {
@@ -98,12 +98,12 @@
                     ]
                 },
                 "9": {
-                    "count": 2,
+                    "count": 1,
                     "attr": 0,
                     "branches": []
                 },
                 "10": {
-                    "count": 2,
+                    "count": 1,
                     "attr": 0,
                     "branches": [
                         {

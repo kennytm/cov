@@ -12,7 +12,7 @@ use petgraph::Direction;
 use petgraph::graph::{DiGraph, EdgeIndex, EdgeReference, NodeIndex};
 use petgraph::visit::{Dfs, EdgeFiltered, EdgeRef, IntoNodeReferences};
 
-use std::{io, mem, usize};
+use std::{cmp, io, mem, usize};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, Bound, HashSet};
 use std::collections::hash_map::{Entry, HashMap};
@@ -261,7 +261,7 @@ impl Graph {
         for (filename, line_number) in block.iter_lines() {
             let file = r.files.entry(filename).or_default();
             let line = file.lines.entry(line_number).or_default();
-            line.count += block_count;
+            line.count = cmp::max(line.count, block_count);
             line.attr |= block.attr;
             last_line = Some((filename, line_number));
         }
