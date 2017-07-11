@@ -23,6 +23,7 @@ copy_dir = "0.1"
 either = "1.1" # <- added just because .flat_map(|a| a) is not clone
 env_logger = "0.4"
 error-chain = "0.10"
+fs2 = "0.4"
 glob = "0.2"
 lazy_static = "0.2"
 log = { version = "0.3", features = ["release_max_level_warn"] }

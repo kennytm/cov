@@ -24,15 +24,16 @@
 //! `cargo cov` works-around this by moving these files to a unique location as soon as they are generated.
 
 use argparse::is_rustc_compiling_local_crate;
-use error::Result;
+use error::{Result, ResultExt};
 use utils::{CommandExt, parent_3};
 
+use fs2::FileExt;
 use rand::{Rng, thread_rng};
 use walkdir::{WalkDir, WalkDirIterator};
 
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::fs::rename;
+use std::fs::{File, rename};
 use std::path::Path;
 use std::process::Command;
 
@@ -54,8 +55,8 @@ use std::process::Command;
 /// | `-Zprofile` (nightly rustc) | Enable coverage |
 /// | `-Cpasses=insert-gcov-profiling` (stable rustc) | Enable coverage |
 /// | `-Clink-dead-code` | Do compile functions not called by anyone, so the function can appear red in the report |
-/// | `-Coverflow-checks=off` | Disable overflow checks, which create unnecessary branches
-/// | `-Cinline-threshold=0` | Disable inlining, which complicates control flow.
+/// | `-Coverflow-checks=off` | Disable overflow checks, which create unnecessary branches. |
+/// | `-Cinline-threshold=0` | Disable inlining, which complicates control flow. |
 ///
 /// Additionally, all GCNO files generated will be moved to `$COV_BUILD_PATH/gcno/` after the build succeeds.
 ///
@@ -184,6 +185,8 @@ pub fn move_gcov_files(cov_build_path: &Path, extension: &OsStr) -> Result<()> {
     let mut dest_path = cov_build_path.join(extension);
     dest_path.push("*");
 
+    let mut lock_file = LockFile::new(cov_build_path)?;
+
     let it = WalkDir::new(cov_build_path).into_iter().filter_entry(|entry| {
         let file_type = entry.file_type();
         let path = entry.path();
@@ -208,6 +211,8 @@ pub fn move_gcov_files(cov_build_path: &Path, extension: &OsStr) -> Result<()> {
 
         loop {
             let mut filename = OsString::from(format!("{:016x}.", rng.gen::<u64>()));
+            filename.push(source_path.file_stem().unwrap_or_else(|| OsStr::new("?")));
+            filename.push(OsStr::new("."));
             filename.push(extension);
             dest_path.set_file_name(filename);
             if !dest_path.exists() {
@@ -216,8 +221,37 @@ pub fn move_gcov_files(cov_build_path: &Path, extension: &OsStr) -> Result<()> {
         }
 
         trace!("mv {:?} {:?}", source_path, dest_path);
-        rename(source_path, &dest_path)?;
+        rename(source_path, &dest_path).chain_err(|| format!("cannot move `{}` to `{}`", source_path.display(), dest_path.display()))?;
     }
 
-    Ok(())
+    lock_file.unlock()
+}
+
+struct LockFile(Option<File>);
+
+impl LockFile {
+    /// Tries to obtain a file lock, which prevents multiple processes from doing to [`move_gcov_files`] action at the
+    /// same time.
+    ///
+    /// [`move_gcov_files`]: ./fn.move_gcov_files.html
+    fn new(cov_build_path: &Path) -> Result<LockFile> {
+        let lock_file = File::open(cov_build_path.join("rustc-shim.bat"))?;
+        lock_file.lock_exclusive()?;
+        Ok(LockFile(Some(lock_file)))
+    }
+
+    /// Unlocks the file immediately.
+    fn unlock(&mut self) -> Result<()> {
+        if let Some(lock_file) = self.0.take() {
+            lock_file.unlock()?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for LockFile {
+    /// Unlocks the file, but ignore errors.
+    fn drop(&mut self) {
+        let _ = self.unlock();
+    }
 }

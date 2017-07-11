@@ -26,6 +26,7 @@ extern crate copy_dir;
 extern crate cov;
 extern crate either;
 extern crate env_logger;
+extern crate fs2;
 extern crate glob;
 extern crate md5;
 extern crate natord;
