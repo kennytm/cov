@@ -1,17 +1,15 @@
 extern crate cov;
 extern crate diff;
-extern crate serde;
 extern crate serde_json;
 extern crate termcolor;
 
 use cov::*;
-use serde::Serialize;
-use serde_json::ser::{PrettyFormatter, Serializer};
+use serde_json::{Value, from_reader, to_value, to_string_pretty};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 use std::ffi::OsStr;
 use std::fs::{File, read_dir};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::Path;
 use std::process::exit;
 
@@ -50,7 +48,7 @@ fn run() -> io::Result<()> {
     Ok(())
 }
 
-fn test(path: &Path) -> Result<(String, String)> {
+fn test(path: &Path) -> Result<(Value, Value)> {
     let mut interner = Interner::new();
     let mut graph = Graph::new();
 
@@ -63,20 +61,16 @@ fn test(path: &Path) -> Result<(String, String)> {
 
     graph.analyze();
     let report = graph.report();
-    let mut serializer = Serializer::with_formatter(Vec::new(), PrettyFormatter::with_indent(b"    "));
-    report.with_interner(&interner).serialize(&mut serializer)?;
-    let actual_report = String::from_utf8(serializer.into_inner()).expect("UTF-8 JSON");
+    let actual_report = to_value(report.with_interner(&interner))?;
 
     let mut report_path = gcda_path;
     report_path.set_extension("json");
-    let mut expected_report_file = File::open(report_path)?;
-    let mut expected_report = String::new();
-    expected_report_file.read_to_string(&mut expected_report)?;
+    let expected_report = from_reader(File::open(report_path)?)?;
 
     Ok((actual_report, expected_report))
 }
 
-fn print_test_result<W: Write + WriteColor>(mut lock: W, result: Result<(String, String)>) -> io::Result<bool> {
+fn print_test_result<W: Write + WriteColor>(mut lock: W, result: Result<(Value, Value)>) -> io::Result<bool> {
     Ok(match result {
         Ok((actual_report, expected_report)) => {
             let success = actual_report == expected_report;
@@ -86,6 +80,8 @@ fn print_test_result<W: Write + WriteColor>(mut lock: W, result: Result<(String,
             } else {
                 lock.set_color(ColorSpec::new().set_fg(Some(Color::Red)))?;
                 writeln!(lock, "FAILED")?;
+                let actual_report = to_string_pretty(&actual_report).expect("JSON");
+                let expected_report = to_string_pretty(&expected_report).expect("JSON");
                 for d in diff::lines(&actual_report, &expected_report) {
                     let (color, prefix, line) = match d {
                         diff::Result::Left(line) => (Color::Green, '+', line),
