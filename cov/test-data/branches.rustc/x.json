@@ -1,0 +1,154 @@
+{
+    "files": {
+        "/Users/travis/build/rust-lang/rust/src/libcore/slice/mod.rs": {
+            "lines": {
+                "387": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                },
+                "388": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                },
+                "389": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                }
+            },
+            "functions": [
+                {
+                    "name": "_ZN4core5slice8{{impl}}10as_ptr<u8>E",
+                    "line": 387,
+                    "column": 0,
+                    "summary": {
+                        "blocks_count": 3,
+                        "blocks_executed": 3,
+                        "entry_count": 1,
+                        "exit_count": 1,
+                        "branches_count": 0,
+                        "branches_executed": 0,
+                        "branches_taken": 0
+                    }
+                }
+            ]
+        },
+        "/Users/travis/build/rust-lang/rust/src/liballoc/slice.rs": {
+            "lines": {
+                "469": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                },
+                "470": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                },
+                "471": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                }
+            },
+            "functions": [
+                {
+                    "name": "_ZN5alloc5slice8{{impl}}10as_ptr<u8>E",
+                    "line": 469,
+                    "column": 0,
+                    "summary": {
+                        "blocks_count": 4,
+                        "blocks_executed": 4,
+                        "entry_count": 1,
+                        "exit_count": 1,
+                        "branches_count": 0,
+                        "branches_executed": 0,
+                        "branches_taken": 0
+                    }
+                }
+            ]
+        },
+        "x.rs": {
+            "lines": {
+                "6": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                },
+                "8": {
+                    "count": 2,
+                    "attr": 0,
+                    "branches": [
+                        {
+                            "count": 0,
+                            "attr": 0,
+                            "filename": "x.rs",
+                            "line": 8,
+                            "column": 0
+                        },
+                        {
+                            "count": 1,
+                            "attr": 0,
+                            "filename": "x.rs",
+                            "line": 9,
+                            "column": 0
+                        }
+                    ]
+                },
+                "9": {
+                    "count": 2,
+                    "attr": 0,
+                    "branches": []
+                },
+                "10": {
+                    "count": 2,
+                    "attr": 0,
+                    "branches": [
+                        {
+                            "count": 1,
+                            "attr": 0,
+                            "filename": "x.rs",
+                            "line": 10,
+                            "column": 0
+                        },
+                        {
+                            "count": 0,
+                            "attr": 0,
+                            "filename": "x.rs",
+                            "line": 11,
+                            "column": 0
+                        }
+                    ]
+                },
+                "11": {
+                    "count": 0,
+                    "attr": 0,
+                    "branches": []
+                },
+                "16": {
+                    "count": 1,
+                    "attr": 0,
+                    "branches": []
+                }
+            },
+            "functions": [
+                {
+                    "name": "_ZN1x5startE",
+                    "line": 6,
+                    "column": 0,
+                    "summary": {
+                        "blocks_count": 13,
+                        "blocks_executed": 9,
+                        "entry_count": 1,
+                        "exit_count": 1,
+                        "branches_count": 4,
+                        "branches_executed": 4,
+                        "branches_taken": 2
+                    }
+                }
+            ]
+        }
+    }
+}
