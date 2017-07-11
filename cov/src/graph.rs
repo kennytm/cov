@@ -14,7 +14,7 @@ use petgraph::visit::{Dfs, EdgeFiltered, EdgeRef, IntoNodeReferences};
 
 use std::{io, mem, usize};
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, Bound, HashSet};
 use std::collections::hash_map::{Entry, HashMap};
 use std::ops::{Index, IndexMut};
 
@@ -653,9 +653,14 @@ impl Graph {
         for arcs in &fi.arcs {
             self.add_arcs(&mut function, new_index, arcs);
         }
-        for lines in &fi.lines {
-            self.add_lines(&mut function, new_index, lines);
+
+        let mut block_number_to_lines = BTreeMap::new();
+        for line in &fi.lines {
+            let old_lines = block_number_to_lines.insert(line.block_number.into(), &*line.lines);
+            debug_assert_eq!(old_lines, None);
         }
+
+        self.add_lines(&mut function, new_index, block_number_to_lines);
 
         self.functions.push(function);
         new_index
@@ -710,15 +715,55 @@ impl Graph {
     }
 
     /// Adds a GCNO source lines list for a block to the graph.
-    fn add_lines(&mut self, function: &mut FunctionInfo, index: FunctionIndex, lines: &Lines) {
-        trace!("gcno-add-lines ({}): {:?} -> {} lines", index.0, lines.block_number, lines.lines.len());
-        let ni = function.node(lines.block_number);
-        let block = &mut self.graph[ni];
+    fn add_lines(&mut self, function: &FunctionInfo, index: FunctionIndex, all_lines: BTreeMap<usize, &[Line]>) {
+        trace!("gcno-add-lines ({})", index.0);
 
-        // add_function() should ensure the function is empty and thus the block had no source info.
-        debug_assert!(block.lines.is_empty());
+        for ni in &function.nodes {
+            let block = &mut self.graph[*ni];
+            // add_function() should ensure the function is empty and thus the block had no source info.
+            debug_assert!(block.lines.is_empty());
 
-        block.lines = lines.lines.clone();
+            let mut lines_range = all_lines.range((Bound::Unbounded, Bound::Included(block.block)));
+            block.lines = lines_range.next_back().map(|(&block_number, &lines)| {
+                if block_number == block.block {
+                    lines.to_owned()
+                } else {
+                    // gcc7 sometimes produces a block in the middle of the graph which has no line number information.
+                    // The line number of these blocks should be automatically the last line of the previous block.
+                    let mut last_line = [Line::FileName(UNKNOWN_SYMBOL), Line::LineNumber(0)];
+                    let mut has_line_number = false;
+                    let mut has_filename = false;
+                    for line in lines.iter().rev() {
+                        match *line {
+                            Line::FileName(_) if !has_filename => {
+                                has_filename = true;
+                                last_line[0] = *line;
+                            }
+                            Line::LineNumber(_) if !has_line_number => {
+                                has_line_number = true;
+                                last_line[1] = *line;
+                            }
+                            _ => {}
+                        }
+                        if has_line_number && has_filename {
+                            break;
+                        }
+                    }
+                    last_line.to_vec()
+                }
+            }).unwrap_or_default();
+        }
+
+        // while next_block_number <= lines.block_number {
+        //     let ni = function.node();
+        //     let block = &mut self.graph[ni];
+
+        //
+        //     debug_assert!(block.lines.is_empty());
+        //     block.lines = lines.lines.clone();
+
+        //     next_block_number.add_one();
+        // }
     }
 
     /// Finds a function given the GCDA identity.
