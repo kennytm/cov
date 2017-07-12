@@ -25,7 +25,7 @@
 
 use argparse::is_rustc_compiling_local_crate;
 use error::{Result, ResultExt};
-use utils::{CommandExt, parent_3};
+use utils::{CommandExt, join_2, parent_3};
 
 use fs2::FileExt;
 use rand::{Rng, thread_rng};
@@ -68,9 +68,11 @@ pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
     let cov_build_path_os = env::var_os("COV_BUILD_PATH").expect("COV_BUILD_PATH");
     let cov_build_path = Path::new(&cov_build_path_os);
     let workspace_path = parent_3(cov_build_path);
+    let is_local = is_rustc_compiling_local_crate(args.clone(), workspace_path);
 
     let mut cmd = Command::new(rustc_path);
-    let is_local = is_rustc_compiling_local_crate(args.clone(), workspace_path);
+    cmd.args(args);
+
     if is_local {
         let profiler_lib_path = env::var_os("COV_PROFILER_LIB_PATH").expect("COV_PROFILER_LIB_PATH");
         let profiler_lib_name = env::var_os("COV_PROFILER_LIB_NAME").expect("COV_PROFILER_LIB_NAME");
@@ -88,7 +90,6 @@ pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
         ]);
     }
 
-    cmd.args(args);
     debug!("Executing {:?}", cmd);
 
     cmd.ensure_success("rustc")?;
@@ -182,8 +183,7 @@ pub fn run<'a, I: Iterator<Item = &'a OsStr>>(mut args: I) -> Result<()> {
 /// ```
 pub fn move_gcov_files(cov_build_path: &Path, extension: &OsStr) -> Result<()> {
     let mut rng = thread_rng();
-    let mut dest_path = cov_build_path.join(extension);
-    dest_path.push("*");
+    let mut dest_path = join_2(cov_build_path, extension, "*");
 
     let mut lock_file = LockFile::new(cov_build_path)?;
 

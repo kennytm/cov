@@ -1,10 +1,15 @@
 //! Extra functions for command line argument parsing.
 
+use error::Result;
+use sourcepath::{SOURCE_TYPE_DEFAULT, SourceType};
+use utils::{join_3, parent_3};
+
 use clap::ArgMatches;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 lazy_static! {
     /// The list of special arguments. See [`update_from_clap()`] for detail.
@@ -154,4 +159,56 @@ pub fn normalize<'a, I: IntoIterator<Item = &'a OsStr>>(args: I, specialized: &m
     }
 
     normalized
+}
+
+
+/// Parsed command-line configuration for the `report` subcommand.
+pub struct ReportConfig<'a> {
+    pub workspace_path: Cow<'a, Path>,
+    pub gcno_path: Cow<'a, Path>,
+    pub gcda_path: Cow<'a, Path>,
+    pub output_path: Cow<'a, Path>,
+    pub template_name: &'a OsStr,
+    pub allowed_source_types: SourceType,
+}
+
+impl<'a> ReportConfig<'a> {
+    /// Parses the command-line arguments for the `report` subcommand.
+    ///
+    /// Returns None if
+    pub fn parse(matches: &'a ArgMatches<'a>, cov_build_path: Result<PathBuf>) -> Result<ReportConfig<'a>> {
+        fn match_or_else<'a, F: FnOnce() -> PathBuf>(matches: &'a ArgMatches<'a>, name: &str, default: F) -> Cow<'a, Path> {
+            match matches.value_of_os(name) {
+                Some(path) => Cow::Borrowed(Path::new(path)),
+                None => Cow::Owned(default()),
+            }
+        }
+
+
+        let (workspace_path, cov_build_path) = match (matches.value_of_os("workspace"), cov_build_path) {
+            (Some(workspace_path), _) => {
+                let workspace_path = Path::new(workspace_path);
+                let cov_build_path = join_3(workspace_path, "target", "cov", "build");
+                (Cow::Borrowed(workspace_path), cov_build_path)
+            },
+            (_, Ok(cov_build_path)) => (Cow::Owned(parent_3(&cov_build_path).to_owned()), cov_build_path),
+            (None, Err(e)) => return Err(e),
+        };
+
+        let gcno_path = match_or_else(matches, "gcno", || cov_build_path.join("gcno"));
+        let gcda_path = match_or_else(matches, "gcda", || cov_build_path.join("gcda"));
+        let output_path = match_or_else(matches, "output", || join_3(&workspace_path, "target", "cov", "report"));
+
+        let template_name = matches.value_of_os("template").unwrap_or_else(|| OsStr::new("html"));
+        let allowed_source_types = matches.values_of("include").map_or(SOURCE_TYPE_DEFAULT, |it| SourceType::from_multi_str(it).expect("SourceType"));
+
+        Ok(ReportConfig {
+            workspace_path,
+            gcno_path,
+            gcda_path,
+            output_path,
+            template_name,
+            allowed_source_types,
+        })
+    }
 }

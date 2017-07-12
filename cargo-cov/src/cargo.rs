@@ -108,9 +108,9 @@ impl<'a> Cargo<'a> {
         })
     }
 
-    /// Obtains the `target/cov/build` path.
-    pub fn cov_build_path(&self) -> &Path {
-        &self.cov_build_path
+    /// Obtains the `target/cov/build` path and transfers ownership.
+    pub fn into_cov_build_path(self) -> PathBuf {
+        self.cov_build_path
     }
 
     /// Prepares the coverage folder for building.
@@ -274,7 +274,7 @@ fn locate_project(cargo_path: &OsStr) -> Result<PathBuf> {
     let child = Command::new(cargo_path) // @rustfmt-force-break
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::null())
         .arg("locate-project")
         .spawn()?;
     let project_location: ProjectLocation = from_reader(child.stdout.expect("stdout"))?;

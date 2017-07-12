@@ -57,10 +57,7 @@ use cargo::Cargo;
 use clap::ArgMatches;
 use either::Either;
 use error::Result;
-use sourcepath::*;
 
-use std::ffi::OsStr;
-use std::iter::empty;
 use std::process::exit;
 
 /// Program entry. Calls [`run()`] and prints any error returned to `stderr`.
@@ -118,13 +115,13 @@ fn run() -> Result<()> {
         Some(args) => normalize(args, &mut special_args),
         None => Vec::new(),
     };
-    let cargo = Cargo::new(special_args, forward_args)?;
+    let cargo = Cargo::new(special_args, forward_args);
 
     // Actually run the subcommands. Please do not pass ArgMatches as a whole to the receiver functions.
     match subcommand {
-        "build" | "test" | "run" => cargo.forward(subcommand)?,
-        "clean" => clean(&cargo, matches)?,
-        "report" => generate_reports(&cargo, matches)?,
+        "build" | "test" | "run" => cargo?.forward(subcommand)?,
+        "clean" => clean(&cargo?, matches)?,
+        "report" => generate_reports(cargo, matches)?,
         _ => ui::print_unknown_subcommand(subcommand)?,
     }
 
@@ -187,6 +184,10 @@ Subcommands:
                     "unknown",
                     "all",
                 ]) "Generate reports for some specific sources")
+                (@arg workspace: --workspace [PATH] "The directory to find the source code, default to the current Cargo workspace")
+                (@arg output: --output -o [PATH] "The directory to store the generated report, default to `<src>/target/cov/report/`")
+                (@arg gcno: --gcno [PATH] "The directory that contains all *.gcno files, default to `<src>/target/cov/build/gcno/`")
+                (@arg gcda: --gcda [PATH] "The directory that contains all *.gcda files, default to `<src>/target/cov/build/gcda/`")
             )
         )
     ).get_matches()
@@ -195,12 +196,9 @@ Subcommands:
 /// Parses the command line arguments and forwards to [`report::generate()`].
 ///
 /// [`report::generate()`]: report/fn.generate.html
-fn generate_reports(cargo: &Cargo, matches: &ArgMatches) -> Result<()> {
-    let allowed_source_types = matches.values_of("include").map_or(SOURCE_TYPE_DEFAULT, |it| SourceType::from_multi_str(it).expect("SourceType"));
-
-    let template = matches.value_of_os("template").unwrap_or_else(|| OsStr::new("html"));
-    let open_path = report::generate(cargo.cov_build_path(), template, allowed_source_types)?;
-
+fn generate_reports(cargo: Result<Cargo>, matches: &ArgMatches) -> Result<()> {
+    let report_config = ReportConfig::parse(matches, cargo.map(Cargo::into_cov_build_path))?;
+    let open_path = report::generate(&report_config)?;
     if matches.is_present("open") {
         if let Some(path) = open_path {
             progress!("Opening", "{}", path.display());

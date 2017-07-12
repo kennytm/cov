@@ -137,6 +137,7 @@
 //! }
 //! ```
 
+use argparse::ReportConfig;
 use error::{Result, ResultExt};
 use sourcepath::{SourceType, identify_source_path};
 use template::new as new_template;
@@ -153,27 +154,27 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 /// Entry point of `cargo cov report` subcommand. Renders the coverage report using a template.
-pub fn generate(cov_build_path: &Path, template_name: &OsStr, allowed_source_types: SourceType) -> Result<Option<PathBuf>> {
-    let report_path = cov_build_path.with_file_name("report");
-    clean_dir(&report_path).chain_err(|| "Cannot clean report directory")?;
-    create_dir_all(&report_path)?;
+pub fn generate(config: &ReportConfig) -> Result<Option<PathBuf>> {
+    let report_path = &config.output_path;
+    clean_dir(report_path).chain_err(|| "Cannot clean report directory")?;
+    create_dir_all(report_path)?;
 
     let mut interner = Interner::new();
-    let graph = create_graph(cov_build_path, &mut interner).chain_err(|| "Cannot create graph")?;
+    let graph = create_graph(config, &mut interner).chain_err(|| "Cannot create graph")?;
     let report = graph.report();
 
-    render(&report_path, template_name, allowed_source_types, &report, &interner).chain_err(|| "Cannot render report")
+    render(report_path, config.template_name, config.allowed_source_types, &report, &interner).chain_err(|| "Cannot render report")
 }
 
 /// Creates an analyzed [`Graph`] from all GCNO and GCDA inside the `target/cov/build` folder.
 ///
 /// [`Graph`]: ../../cov/graph/struct.Graph.html
-fn create_graph(cov_build_path: &Path, interner: &mut Interner) -> cov::Result<Graph> {
+fn create_graph(config: &ReportConfig, interner: &mut Interner) -> cov::Result<Graph> {
     let mut graph = Graph::default();
 
-    for extension in &["gcno", "gcda"] {
-        progress!("Parsing", "*.{} files", extension);
-        for entry in read_dir(cov_build_path.join(extension))? {
+    for &(extension, dir_path) in &[("gcno", &config.gcno_path), ("gcda", &config.gcda_path)] {
+        progress!("Parsing", "{}/*.{}", dir_path.display(), extension);
+        for entry in read_dir(dir_path)? {
             let path = entry?.path();
             if path.extension() == Some(OsStr::new(extension)) {
                 trace!("merging {} {:?}", extension, path);

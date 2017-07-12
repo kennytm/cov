@@ -16,7 +16,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 #[cfg(windows)]
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub trait OptionExt {
@@ -109,7 +109,26 @@ impl CommandExt for Command {
     }
 }
 
-
+/// Short circuit of `path.parent().parent().parent()`.
+///
+/// # Panics
+///
+/// Panics when any of the parent returns `None`.
 pub fn parent_3(path: &Path) -> &Path {
-    path.parent().expect("..").parent().expect("../..").parent().expect("../../..")
+    path.parent().and_then(Path::parent).and_then(Path::parent).expect("../../..")
+}
+
+/// Short circuit of `path.join(a).join(b)` without creating intermediate `PathBuf`s.
+pub fn join_2<P1: AsRef<Path>, P2: AsRef<Path>>(path: &Path, a: P1, b: P2) -> PathBuf {
+    let mut path = path.join(a);
+    path.push(b);
+    path
+}
+
+/// Short circuit of `path.join(a).join(b).join(c)` without creating intermediate `PathBuf`s.
+pub fn join_3<P1: AsRef<Path>, P2: AsRef<Path>, P3: AsRef<Path>>(path: &Path, a: P1, b: P2, c: P3) -> PathBuf {
+    let mut path = path.join(a);
+    path.push(b);
+    path.push(c);
+    path
 }

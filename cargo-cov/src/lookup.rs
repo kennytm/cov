@@ -52,33 +52,23 @@ const PROFILER_GLOB_PATTERNS: &[&str] = &[
 fn profiler_name_part(target: &str) -> Result<&str> {
     Ok(match target {
         // iOS and macOS
-        "aarch64-apple-ios" |
-        "armv7-apple-ios" |
-        "armv7s-apple-ios" => "_ios",
-        "i386-apple-ios" |
-        "x86_64-apple-ios" => "_iossim",
-        "i686-apple-darwin" |
-        "x86_64-apple-darwin" => "_osx",
+        "aarch64-apple-ios" | "armv7-apple-ios" | "armv7s-apple-ios" => "_ios",
+        "i386-apple-ios" | "x86_64-apple-ios" => "_iossim",
+        "i686-apple-darwin" | "x86_64-apple-darwin" => "_osx",
 
         // Android
         "aarch64-linux-android" => "-aarch64-android",
-        "arm-linux-androideabi" |
-        "armv7-linux-androideabi" => "-arm-android",
+        "arm-linux-androideabi" | "armv7-linux-androideabi" => "-arm-android",
         "i686-linux-android" => "-i686-android",
         "x86_64-linux-android" => "-x86_64-android",
         "mipsel-linux-android" => "-mipsel-android",
         "mips64el-linux-android" => "-mips64el-android",
 
         // Windows -- LLVM's installer provides -i386 packages.
-        "i586-pc-windows-msvc" |
-        "i686-pc-windows-msvc" => "-i386",
+        "i586-pc-windows-msvc" | "i686-pc-windows-msvc" => "-i386",
 
         // ARM with hard-float support
-        "arm-unknown-linux-gnueabihf" |
-        "arm-unknown-linux-musleabihf" |
-        "armv7-unknown-linux-gnueabihf" |
-        "armv7-unknown-linux-musleabihf" |
-        "thumbv7em-none-eabihf" => "-armhf",
+        "arm-unknown-linux-gnueabihf" | "arm-unknown-linux-musleabihf" | "armv7-unknown-linux-gnueabihf" | "armv7-unknown-linux-musleabihf" | "thumbv7em-none-eabihf" => "-armhf",
 
         // Everything else
         _ => {
