@@ -902,11 +902,11 @@ impl Graph {
     ///
     /// This is mainly intended for debugging.
     ///
-    /// Only functions with filename matching the input `filename` symbol will be printed. If the `filename` is
+    /// Only functions with name matching the input `function_name` symbol will be printed. If the `function_name` is
     /// [`UNKNOWN_SYMBOL`], however, all nodes will be printed.
     ///
     /// [`UNKNOWN_SYMBOL`]: ../intern/const.UNKNOWN_SYMBOL.html
-    pub fn write_dot<W: io::Write>(&self, filename: Symbol, mut writer: W) -> io::Result<()> {
+    pub fn write_dot<W: io::Write>(&self, function_name: Symbol, mut writer: W) -> io::Result<()> {
         fn count_to_color_label(count: Option<u64>) -> (&'static str, Cow<'static, str>) {
             match count {
                 Some(0) => ("red", Cow::Borrowed("0")),
@@ -919,7 +919,7 @@ impl Graph {
         let mut allowed_nodes = HashSet::new();
         for (ni, block) in self.graph.node_references() {
             let function = &self[block.index];
-            if filename != UNKNOWN_SYMBOL && filename != function.source.map(|a| a.filename).unwrap_or(UNKNOWN_SYMBOL) {
+            if function_name != UNKNOWN_SYMBOL && function_name != function.source.map(|a| a.name).unwrap_or(UNKNOWN_SYMBOL) {
                 continue;
             }
             allowed_nodes.insert(ni);

@@ -18,7 +18,7 @@ fn run() -> Result<()> {
 
     let matches = clap_app!(graphviz =>
         (@arg analyze: -a --analyze "Produce graph after analysis")
-        (@arg filter: -f --filter +takes_value "Only produce graphs from this source file")
+        (@arg filter: -f --filter +takes_value "Only produce graphs from this function")
         (@arg files: <FILE>... "*.gcno and *.gcda files to form the graph")
     ).get_matches();
 
