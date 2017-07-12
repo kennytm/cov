@@ -8,6 +8,9 @@
 #![cfg_attr(feature="cargo-clippy", warn(filter_map, items_after_statements, mut_mut, mutex_integer, nonminimal_bool, option_map_unwrap_or, option_map_unwrap_or_else, option_unwrap_used, print_stdout, result_unwrap_used, similar_names, single_match_else, wrong_pub_self_convention))]
 // Note: NOT enabling the `unused_results` lint, too many false positive here.
 
+// FIXME: Temporarily allowed, see https://github.com/Manishearth/rust-clippy/issues/1877.
+#![cfg_attr(feature="cargo-clippy", allow(single_match_else, identity_op))]
+
 #[macro_use]
 extern crate bitflags;
 #[macro_use]

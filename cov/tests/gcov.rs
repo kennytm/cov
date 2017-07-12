@@ -48,7 +48,7 @@ extern crate serde_json;
 extern crate termcolor;
 
 use cov::*;
-use serde_json::{Value, from_reader, to_value, to_string_pretty};
+use serde_json::{Value, from_reader, to_string_pretty, to_value};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 use std::env::args_os;

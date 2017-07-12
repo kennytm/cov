@@ -206,6 +206,7 @@ impl<'si, 'de, A: MapAccess<'de>> MapAccess<'de> for WithInterner<'si, A> {
         wrap!(self.next_value_seed(seed))
     }
 
+    #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
     fn next_entry_seed<K: DeserializeSeed<'de>, V: DeserializeSeed<'de>>(&mut self, key_seed: K, value_seed: V) -> Result<Option<(K::Value, V::Value)>, A::Error> {
         wrap!(self.next_entry_seed(key_seed, value_seed))
     }

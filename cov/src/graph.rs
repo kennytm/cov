@@ -106,13 +106,13 @@ impl Graph {
             match gcno_index.entry(fi) {
                 // Existing entry: Just add a GCDA index.
                 Entry::Occupied(entry) => {
-                    self.gcda_index.insert(gcda_identity, *entry.get());
+                    let _ = self.gcda_index.insert(gcda_identity, *entry.get());
                 },
                 // New entry: Create the new function.
                 Entry::Vacant(entry) => {
                     let new_index = self.add_function(entry.key());
-                    self.gcda_index.insert(gcda_identity, new_index);
-                    entry.insert(new_index);
+                    let _ = self.gcda_index.insert(gcda_identity, new_index);
+                    let _ = entry.insert(new_index);
                 },
             }
         }
@@ -646,7 +646,7 @@ impl Graph {
         let mut function = FunctionInfo {
             arcs: Vec::with_capacity(fi.arcs.iter().map(|a| a.arcs.len()).sum()),
             nodes: Vec::with_capacity(fi.blocks.flags.len()),
-            source: fi.function.source.clone(),
+            source: fi.function.source,
         };
 
         self.add_blocks(&mut function, new_index, &fi.blocks);
@@ -660,7 +660,7 @@ impl Graph {
             debug_assert_eq!(old_lines, None);
         }
 
-        self.add_lines(&mut function, new_index, block_number_to_lines);
+        self.add_lines(&function, new_index, block_number_to_lines);
 
         self.functions.push(function);
         new_index
@@ -724,10 +724,12 @@ impl Graph {
             debug_assert!(block.lines.is_empty());
 
             let mut lines_range = all_lines.range((Bound::Unbounded, Bound::Included(block.block)));
-            block.lines = lines_range.next_back().map(|(&block_number, &lines)| {
-                if block_number == block.block {
-                    lines.to_owned()
-                } else {
+            block.lines = lines_range
+                .next_back()
+                .map(|(&block_number, &lines)| {
+                    if block_number == block.block {
+                        return lines.to_owned();
+                    }
                     // gcc7 sometimes produces a block in the middle of the graph which has no line number information.
                     // The line number of these blocks should be automatically the last line of the previous block.
                     let mut last_line = [Line::FileName(UNKNOWN_SYMBOL), Line::LineNumber(0)];
@@ -738,32 +740,21 @@ impl Graph {
                             Line::FileName(_) if !has_filename => {
                                 has_filename = true;
                                 last_line[0] = *line;
-                            }
+                            },
                             Line::LineNumber(_) if !has_line_number => {
                                 has_line_number = true;
                                 last_line[1] = *line;
-                            }
-                            _ => {}
+                            },
+                            _ => {},
                         }
                         if has_line_number && has_filename {
                             break;
                         }
                     }
                     last_line.to_vec()
-                }
-            }).unwrap_or_default();
+                })
+                .unwrap_or_default();
         }
-
-        // while next_block_number <= lines.block_number {
-        //     let ni = function.node();
-        //     let block = &mut self.graph[ni];
-
-        //
-        //     debug_assert!(block.lines.is_empty());
-        //     block.lines = lines.lines.clone();
-
-        //     next_block_number.add_one();
-        // }
     }
 
     /// Finds a function given the GCDA identity.
@@ -919,7 +910,7 @@ impl Graph {
         let mut allowed_nodes = HashSet::new();
         for (ni, block) in self.graph.node_references() {
             let function = &self[block.index];
-            if function_name != UNKNOWN_SYMBOL && function_name != function.source.map(|a| a.name).unwrap_or(UNKNOWN_SYMBOL) {
+            if function_name != UNKNOWN_SYMBOL && function_name != function.source.map_or(UNKNOWN_SYMBOL, |a| a.name) {
                 continue;
             }
             allowed_nodes.insert(ni);

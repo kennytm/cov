@@ -115,7 +115,7 @@ pub fn find_native_profiler_lib(target: &str) -> Result<(PathBuf, String)> {
     let filename = [prefix, &libname, suffix].concat();
 
     let match_options = MatchOptions {
-        case_sensitive: !cfg!(windows),
+        case_sensitive: cfg!(not(windows)),
         require_literal_separator: true,
         require_literal_leading_dot: true,
     };
