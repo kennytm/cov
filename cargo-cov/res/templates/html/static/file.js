@@ -25,7 +25,7 @@ window.onload = highlight;
 
 var arrowIdSeq = 0;
 
-/** @param e {MouseEvent} */
+/** @param {MouseEvent} e */
 function drawArrow(e) {
     var target = e.target;
     if (!/\bbr-local\b/.test(target.className)) {
@@ -78,7 +78,7 @@ function drawArrow(e) {
     document.body.appendChild(canvas);
 }
 
-/** @param e {MouseEvent} */
+/** @param {MouseEvent} e */
 function clearArrow(e) {
     var target = e.target;
     if (!/\bbr-local\b/.test(target.className)) {

@@ -38,7 +38,10 @@
                                 {% else %}
                                     {% set cls = "covered" %}
                                 {% endif %}
-                                {% if branch.symbol != symbol %}
+                                {% if branch.symbol == 0 and branch.line == 0 %}
+                                    {% set direction = "unknown" %}
+                                    {% set local = "unknown" %}
+                                {% elif branch.symbol != symbol %}
                                     {% set direction = "ext" %}
                                     {% set local = "ext" %}
                                 {% else %}
@@ -67,8 +70,17 @@
                                     {% set icon = "▼" %}
                                 {% elif direction == "down" and cls == "covered" %}
                                     {% set icon = "▽" %}
+                                {% elif direction == "unknown" and cls == "zero" %}
+                                    {% set icon = "◆" %}
+                                {% elif direction == "unknown" and cls == "covered" %}
+                                    {% set icon = "◇" %}
                                 {% endif %}
-                                <a class="br-{{cls}} br-{{local}}" href="{{branch.symbol}}.html#{{branch.line}}" data-branch-count="{{branch.count}}">{{icon}}</a>{%
+                                {% if direction == "unknown" %}
+                                    {% set href = "#" %}
+                                {% else %}
+                                    {% set href = macros::branch_link_target(branch=branch) %}
+                                {% endif %}
+                                <a class="br-{{cls}} br-{{local}}" href="{{href}}" data-branch-count="{{branch.count}}">{{icon}}</a>{%
                             endfor %}
                         </td>
                         <td>{{ line.count }}</td>

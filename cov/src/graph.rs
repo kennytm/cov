@@ -727,7 +727,7 @@ impl Graph {
             block.lines = lines_range
                 .next_back()
                 .map(|(&block_number, &lines)| {
-                    if block_number == block.block {
+                    if block_number == block.block || lines.is_empty() {
                         return lines.to_owned();
                     }
                     // gcc7 sometimes produces a block in the middle of the graph which has no line number information.

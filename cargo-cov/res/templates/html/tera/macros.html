@@ -21,3 +21,7 @@
     {% endif %}
     <td title="{{value}}/{{total}}" class="ch-{{cls}}">{{percent}}%</td>
 {% endmacro coverage_percent_cell %}
+
+{% macro branch_link_target(branch) %}
+    {{branch.symbol}}.html#{{branch.line}}
+{% endmacro branch_link_target %}
