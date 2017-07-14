@@ -141,7 +141,7 @@ use argparse::ReportConfig;
 use error::{Result, ResultExt};
 use sourcepath::{SourceType, identify_source_path};
 use template::new as new_template;
-use utils::{clean_dir, parent_3};
+use utils::clean_dir;
 
 use copy_dir::copy_dir;
 use cov::{self, Gcov, Graph, Interner, Report, Symbol};
@@ -151,7 +151,7 @@ use tera::{Context, Tera};
 use std::ffi::OsStr;
 use std::fs::{File, create_dir_all, read_dir};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Entry point of `cargo cov report` subcommand. Renders the coverage report using a template.
 pub fn generate(config: &ReportConfig) -> Result<Option<PathBuf>> {
@@ -163,7 +163,7 @@ pub fn generate(config: &ReportConfig) -> Result<Option<PathBuf>> {
     let graph = create_graph(config, &mut interner).chain_err(|| "Cannot create graph")?;
     let report = graph.report();
 
-    render(report_path, config.template_name, config.allowed_source_types, &report, &interner).chain_err(|| "Cannot render report")
+    render(config, &report, &interner).chain_err(|| "Cannot render report")
 }
 
 /// Creates an analyzed [`Graph`] from all GCNO and GCDA inside the `target/cov/build` folder.
@@ -190,13 +190,13 @@ fn create_graph(config: &ReportConfig, interner: &mut Interner) -> cov::Result<G
 /// Renders the `report` into `report_path` using a template.
 ///
 /// If the template has a summary page, returns the path of the rendered summary.
-fn render(report_path: &Path, template_name: &OsStr, allowed_source_types: SourceType, report: &Report, interner: &Interner) -> Result<Option<PathBuf>> {
+fn render(config: &ReportConfig, report: &Report, interner: &Interner) -> Result<Option<PathBuf>> {
     use toml::de::from_slice;
 
     let mut template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     template_path.push("res");
     template_path.push("templates");
-    template_path.push(template_name);
+    template_path.push(config.template_name);
     trace!("using templates at {:?}", template_path);
 
     // Read the template configuration.
@@ -204,19 +204,18 @@ fn render(report_path: &Path, template_name: &OsStr, allowed_source_types: Sourc
     let mut config_file = File::open(&template_path).chain_err(|| format!("Cannot open template at `{}`", template_path.display()))?;
     let mut config_bytes = Vec::new();
     config_file.read_to_end(&mut config_bytes)?;
-    let config: Config = from_slice(&config_bytes).chain_err(|| "Cannot read template configuration")?;
+    let template_config: Config = from_slice(&config_bytes).chain_err(|| "Cannot read template configuration")?;
 
     // Copy the static resources if exist.
     template_path.set_file_name("static");
     if template_path.is_dir() {
-        copy_dir(&template_path, report_path.join("static"))?;
+        copy_dir(&template_path, config.output_path.join("static"))?;
     }
 
     template_path.set_file_name("tera");
     template_path.push("*");
 
-    // The report path is at $crate/target/cov/report, so we call .parent() three times.
-    let crate_path = parent_3(report_path).to_string_lossy();
+    let workspace_str = config.workspace_path.to_string_lossy();
 
     let mut tera = new_template(template_path.to_str().expect("UTF-8 template path"))?;
 
@@ -225,8 +224,8 @@ fn render(report_path: &Path, template_name: &OsStr, allowed_source_types: Sourc
         .iter()
         .filter_map(|(&symbol, file)| {
             let path = &interner[symbol];
-            let source_type = identify_source_path(path, &crate_path).0;
-            if allowed_source_types.contains(source_type) {
+            let source_type = identify_source_path(path, &workspace_str).0;
+            if config.allowed_source_types.contains(source_type) {
                 Some(ReportFileEntry {
                     symbol,
                     source_type,
@@ -240,16 +239,16 @@ fn render(report_path: &Path, template_name: &OsStr, allowed_source_types: Sourc
         .collect::<Vec<_>>();
     report_files.sort_by_key(|entry| (entry.source_type, entry.path));
 
-    let summary_path = if let Some(summary) = config.summary {
-        Some(write_summary(report_path, &report_files, &tera, &crate_path, &summary).chain_err(|| "Cannot write summary")?)
+    let summary_path = if let Some(summary) = template_config.summary {
+        Some(write_summary(config, &report_files, &tera, &summary).chain_err(|| "Cannot write summary")?)
     } else {
         None
     };
 
-    if let Some(files_config) = config.files {
+    if let Some(files_config) = template_config.files {
         tera.add_raw_template("<filename>", files_config.output)?;
         for entry in &report_files {
-            write_file(report_path, interner, entry, &tera, &crate_path, files_config.template).chain_err(|| format!("Cannot write file at `{}`", entry.path))?;
+            write_file(config, interner, entry, &tera, files_config.template).chain_err(|| format!("Cannot write file at `{}`", entry.path))?;
         }
     }
 
@@ -279,8 +278,8 @@ struct FileConfig<'a> {
 }
 
 /// Renders the summary page.
-fn write_summary(report_path: &Path, report_files: &[ReportFileEntry], tera: &Tera, crate_path: &str, config: &FileConfig) -> Result<PathBuf> {
-    let path = report_path.join(config.output);
+fn write_summary(config: &ReportConfig, report_files: &[ReportFileEntry], tera: &Tera, file_config: &FileConfig) -> Result<PathBuf> {
+    let path = config.output_path.join(file_config.output);
     let mut context = Context::new();
 
     let files = report_files
@@ -294,9 +293,9 @@ fn write_summary(report_path: &Path, report_files: &[ReportFileEntry], tera: &Te
         })
         .collect::<Vec<_>>();
 
-    context.add("crate_path", &crate_path);
+    context.add("crate_path", &config.workspace_path);
     context.add("files", &files);
-    let rendered = tera.render(config.template, &context)?;
+    let rendered = tera.render(file_config.template, &context)?;
     let mut summary_file = File::create(&path)?;
     summary_file.write_all(rendered.as_bytes())?;
     progress!("Created", "{}", path.display());
@@ -304,7 +303,7 @@ fn write_summary(report_path: &Path, report_files: &[ReportFileEntry], tera: &Te
 }
 
 /// Renders report for a source path.
-fn write_file(report_path: &Path, interner: &Interner, entry: &ReportFileEntry, tera: &Tera, crate_path: &str, template_name: &str) -> Result<()> {
+fn write_file(config: &ReportConfig, interner: &Interner, entry: &ReportFileEntry, tera: &Tera, template_name: &str) -> Result<()> {
     let mut context = Context::new();
 
     let mut lines = Vec::new();
@@ -358,7 +357,7 @@ fn write_file(report_path: &Path, interner: &Interner, entry: &ReportFileEntry, 
         })
         .collect::<Vec<_>>();
 
-    context.add("crate_path", &crate_path);
+    context.add("crate_path", &config.workspace_path);
     context.add("symbol", &entry.symbol);
     context.add("path", &entry.path);
     context.add("summary", &entry.file.summary());
@@ -366,7 +365,7 @@ fn write_file(report_path: &Path, interner: &Interner, entry: &ReportFileEntry, 
     context.add("functions", &functions);
 
     let filename = tera.render("<filename>", &context)?;
-    let path = report_path.join(filename);
+    let path = config.output_path.join(filename);
     let rendered = tera.render(template_name, &context)?;
     let mut file_file = File::create(path)?;
     file_file.write_all(rendered.as_bytes())?;
