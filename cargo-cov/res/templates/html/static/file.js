@@ -15,6 +15,8 @@ function highlight() {
         lineElement.className += ' highlighted';
         if (lineElement.scrollIntoViewIfNeeded) {
             lineElement.scrollIntoViewIfNeeded(true);
+        } else if (lineElement.scrollIntoView) {
+            lineElement.scrollIntoView(true);
         }
     }
 };

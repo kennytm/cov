@@ -109,7 +109,7 @@
                         {% set fn_cls = "covered" %}
                     {% endif %}
                     <tr class="ln-{{fn_cls}}">
-                        <td><a href="#{{ f.line }}" title="{{ f.name | escape }}">{{ f.name | demangle | escape }}</a></td>
+                        <td><a href="#{{ f.line }}" title="{{ f.name | escape }}">{{ f.name | demangle | escape | replace(from="::", to="::​") | replace(from=",", to=",​") }}</a></td>
                         <td>{{ f.summary.entry_count }}</td>
                         {{ macros::coverage_percent_cell(value=f.summary.exit_count, total=f.summary.entry_count, fair=0, good=0) }}
                         {{ macros::coverage_percent_cell(value=f.summary.blocks_executed, total=f.summary.blocks_count, fair=75, good=90) }}

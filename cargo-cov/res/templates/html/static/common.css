@@ -70,6 +70,8 @@ a:hover {
     text-align: left;
     width: inherit;
     min-width: 20em;
+    max-width: 58em;
+    overflow-wrap: break-word;
 }
 
 #source {
