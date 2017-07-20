@@ -1,3 +1,9 @@
 [workspace]
 members = ["cargo-cov", "cov"]
 exclude = ["specimen"]
+
+[profile.test]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
