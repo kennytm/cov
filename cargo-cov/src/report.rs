@@ -193,9 +193,7 @@ fn create_graph(config: &ReportConfig, interner: &mut Interner) -> cov::Result<G
 fn render(config: &ReportConfig, report: &Report, interner: &Interner) -> Result<Option<PathBuf>> {
     use toml::de::from_slice;
 
-    let mut template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    template_path.push("res");
-    template_path.push("templates");
+    let mut template_path = [env!("CARGO_MANIFEST_DIR"), "res", "templates"].iter().collect::<PathBuf>();
     template_path.push(config.template_name);
     trace!("using templates at {:?}", template_path);
 
@@ -310,7 +308,8 @@ fn write_file(config: &ReportConfig, interner: &Interner, entry: &ReportFileEntr
     let mut source_line_number = 1;
 
     // Read the source file.
-    if let Ok(source_file) = File::open(entry.path) {
+    let path = config.workspace_path.join(entry.path);
+    if let Ok(source_file) = File::open(path) {
         let source_file = BufReader::new(source_file);
         for source_line in source_file.lines() {
             let (count, branches) = if let Some(line) = entry.file.lines.get(&source_line_number) {

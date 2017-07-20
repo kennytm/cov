@@ -50,12 +50,12 @@
 //!
 //! ## Deserialization
 //!
-//! See [`deserializer_with_interner()`] for how to deserialize a string back to a [`Symbol`].
+//! See [`deserializer::with_interner()`] for how to deserialize a string back to a [`Symbol`].
 //!
 //! [`Interner`]: ./struct.Interner.html
 //! [`Symbol`]: ./struct.Symbol.html
 //! [`with_interner()`]: ./trait.SerializeWithInterner.html#method.with_interner
-//! [`deserializer_with_interner()`]: ../deserializer/fn.deserializer_with_interner.html
+//! [`deserializer::with_interner()`]: ../deserializer/fn.with_interner.html
 
 use num_traits::{Bounded, FromPrimitive, ToPrimitive};
 #[cfg(feature = "serde")]
@@ -138,6 +138,7 @@ pub const UNKNOWN_SYMBOL: Symbol = Symbol(0);
 /// The string interner.
 ///
 /// See the [module documentation](index.html) for detail.
+#[cfg_attr(feature = "cargo-clippy", allow(stutter))]
 pub struct Interner(ArenaSet<Box<str>, Symbol>);
 
 impl Interner {

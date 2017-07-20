@@ -50,6 +50,7 @@ pub fn clean_dir(dir: &Path) -> io::Result<()> {
 macro_rules! do_compare {
     ($lhs:expr, $rhs:expr) => {
         compare_iter($lhs, $rhs, |_| false, |a, b| a.cmp(&b), |c| {
+            #[cfg_attr(feature = "cargo-clippy", allow(cast_possible_wrap))]
             match **c {
                 b @ 0x30 ... 0x39 => Some((b - 0x30) as isize),
                 _ => None,

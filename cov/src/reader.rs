@@ -52,7 +52,7 @@ pub struct Reader<'si, R> {
 /// Consumes the whole reader to the end.
 fn consume_to_end<R: Read>(reader: &mut R) -> Result<()> {
     loop {
-        let mut buf = [0u8; 64];
+        let mut buf = [0_u8; 64];
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(_) => continue,
@@ -408,12 +408,12 @@ impl<'si, R: Read> Reader<'si, R> {
         let mut lines: Vec<_> = self.until_eof(|s| {
             trace!("line-line-no @ 0x{:x}", s.cursor);
             let line_number = s.read_32()?;
-            let line = if line_number != 0 {
-                Line::LineNumber(line_number)
-            } else {
+            let line = if line_number == 0 {
                 trace!("line-filename @ 0x{:x}", s.cursor);
                 let filename = s.read_string()?;
                 Line::FileName(filename)
+            } else {
+                Line::LineNumber(line_number)
             };
             Ok(line)
         })?;
@@ -465,7 +465,7 @@ impl<'si, R: Read> Reader<'si, R> {
                     .iter()
                     .flat_map(|num| (0..32).map(move |i| num & 1 << i))
                     .enumerate()
-                    .filter_map(|(i, b)| if b != 0 { Some(i as u32) } else { None });
+                    .filter_map(|(i, b)| if b == 0 { None } else { Some(i as u32) });
                 trace!("summary-histogram-buckets @ 0x{:x}", self.cursor);
                 let buckets = self.until_eof(|s| {
                     let index = bitpos.next().unwrap_or(256);

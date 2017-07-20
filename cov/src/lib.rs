@@ -56,13 +56,11 @@
 //! [`Graph`]: ./graph/struct.Graph.html
 //! [`Report`]: ./report/struct.Report.html
 
-#![recursion_limit="128"] // needed for error_chain.
-#![doc(html_root_url="https://docs.rs/cov/0.1.0")]
-#![cfg_attr(feature="cargo-clippy", warn(anonymous_parameters, fat_ptr_transmutes, missing_copy_implementations, missing_debug_implementations, missing_docs, trivial_casts, trivial_numeric_casts, unsafe_code, unused_extern_crates, unused_import_braces, unused_qualifications, unused_results, variant_size_differences))]
-#![cfg_attr(feature="cargo-clippy", warn(filter_map, items_after_statements, mut_mut, mutex_integer, nonminimal_bool, option_map_unwrap_or, option_map_unwrap_or_else, option_unwrap_used, print_stdout, result_unwrap_used, similar_names, single_match_else, wrong_pub_self_convention))]
+#![recursion_limit = "128"] // needed for error_chain.
+#![doc(html_root_url = "https://docs.rs/cov/0.1.0")]
 
-// FIXME: Temporarily allowed, see https://github.com/Manishearth/rust-clippy/issues/1877.
-#![cfg_attr(feature="cargo-clippy", allow(single_match_else, identity_op))]
+#![cfg_attr(feature = "cargo-clippy", warn(warnings, clippy_pedantic))]
+#![cfg_attr(feature = "cargo-clippy", allow(missing_docs_in_private_items, use_debug, cast_possible_truncation))]
 
 #[macro_use]
 extern crate error_chain;
@@ -93,7 +91,7 @@ pub mod graph;
 pub mod report;
 
 #[cfg(feature = "serde")]
-pub use deserializer::deserializer_with_interner;
+pub use deserializer::with_interner as deserializer_with_interner;
 pub use error::{ErrorKind, Result};
 pub use graph::Graph;
 pub use intern::{Interner, Symbol};

@@ -68,7 +68,11 @@ fn profiler_name_part(target: &str) -> Result<&str> {
         "i586-pc-windows-msvc" | "i686-pc-windows-msvc" => "-i386",
 
         // ARM with hard-float support
-        "arm-unknown-linux-gnueabihf" | "arm-unknown-linux-musleabihf" | "armv7-unknown-linux-gnueabihf" | "armv7-unknown-linux-musleabihf" | "thumbv7em-none-eabihf" => "-armhf",
+        "arm-unknown-linux-gnueabihf" |
+        "arm-unknown-linux-musleabihf" |
+        "armv7-unknown-linux-gnueabihf" |
+        "armv7-unknown-linux-musleabihf" |
+        "thumbv7em-none-eabihf" => "-armhf",
 
         // Everything else
         _ => {
@@ -120,7 +124,8 @@ pub fn find_native_profiler_lib(target: &str) -> Result<(PathBuf, String)> {
         require_literal_leading_dot: true,
     };
     for &glob_path in PROFILER_GLOB_PATTERNS {
-        let pattern = glob_path.to_owned() + &filename;
+        let mut pattern = glob_path.to_owned();
+        pattern.push_str(&filename);
         let paths = glob_with(&pattern, &match_options).expect("glob pattern");
         let path = paths
             .filter_map(|gr| match gr {

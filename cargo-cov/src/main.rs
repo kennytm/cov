@@ -4,12 +4,10 @@
 //! Please see the [crate README](https://github.com/kennytm/cov#readme) for detail.
 
 #![doc(html_root_url="https://docs.rs/cargo-cov/0.1.0")]
-#![cfg_attr(feature="cargo-clippy", warn(anonymous_parameters, fat_ptr_transmutes, missing_copy_implementations, missing_debug_implementations, missing_docs, trivial_casts, trivial_numeric_casts, unsafe_code, unused_extern_crates, unused_import_braces, unused_qualifications, variant_size_differences))]
-#![cfg_attr(feature="cargo-clippy", warn(filter_map, items_after_statements, mut_mut, mutex_integer, nonminimal_bool, option_map_unwrap_or, option_map_unwrap_or_else, option_unwrap_used, print_stdout, result_unwrap_used, similar_names, single_match_else, wrong_pub_self_convention))]
-// Note: NOT enabling the `unused_results` lint, too many false positive here.
 
-// FIXME: Temporarily allowed, see https://github.com/Manishearth/rust-clippy/issues/1877.
-#![cfg_attr(feature="cargo-clippy", allow(single_match_else, identity_op))]
+#![cfg_attr(feature = "cargo-clippy", warn(warnings, clippy_pedantic))]
+#![cfg_attr(feature = "cargo-clippy", allow(missing_docs_in_private_items, use_debug, non_ascii_literal, shadow_reuse, unused_results))]
+// `unused_results` caused too many false positive here.
 
 #[macro_use]
 extern crate bitflags;
@@ -27,7 +25,6 @@ extern crate lazy_static;
 extern crate serde_json;
 extern crate copy_dir;
 extern crate cov;
-extern crate either;
 extern crate env_logger;
 extern crate fs2;
 extern crate glob;
@@ -58,7 +55,6 @@ mod utils;
 use argparse::*;
 use cargo::Cargo;
 use clap::ArgMatches;
-use either::Either;
 use error::Result;
 
 use std::process::exit;
@@ -83,10 +79,7 @@ fn run() -> Result<()> {
 
     // Forward the shims. Otherwise, ensure it is run as `cargo cov`.
     if subcommand.ends_with(".bat") {
-        let forward_args = match matches.values_of_os("") {
-            Some(a) => Either::Left(a),
-            None => Either::Right(empty()),
-        };
+        let forward_args = matches.values_of_os("").unwrap_or_default();
         return match subcommand {
             "rustc-shim.bat" => shim::rustc(forward_args),
             "rustdoc-shim.bat" => shim::rustdoc(forward_args),

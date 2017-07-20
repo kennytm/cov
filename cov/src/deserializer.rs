@@ -1,9 +1,9 @@
 //! Deserialization with string interner.
 //!
-//! This module provides the [`deserializer_with_interner()`] function, which wraps an existing deserializer such that
+//! This module provides the [`deserializer::with_interner()`] function, which wraps an existing deserializer such that
 //! whenever a [`Symbol`] is encountered, instead of reading an integer, it will read a string and intern it.
 //!
-//! [`deserializer_with_interner()`]: ./fn.deserializer_with_interner.html
+//! [`deserializer::with_interner()`]: ./fn.with_interner.html
 //! [`Symbol`]: ../intern/struct.Symbol.html
 
 #![cfg(feature = "serde")]
@@ -64,7 +64,7 @@ pub struct WithInterner<'si, T> {
 /// ```
 ///
 /// [`Symbol`]: ../intern/struct.Symbol.html
-pub fn deserializer_with_interner<'de, D: Deserializer<'de>>(deserializer: D, interner: &RefCell<Interner>) -> WithInterner<D> {
+pub fn with_interner<'de, D: Deserializer<'de>>(deserializer: D, interner: &RefCell<Interner>) -> WithInterner<D> {
     WithInterner {
         interner,
         value: deserializer,
@@ -362,7 +362,7 @@ fn test_deserialize_symbol() {
         }"#,
     );
     let interner = RefCell::new(interner);
-    let deserializer = deserializer_with_interner(&mut deserializer, &interner);
+    let deserializer = with_interner(&mut deserializer, &interner);
     let actual = Foo::deserialize(deserializer).expect("deserialized");
 
     assert_eq!(expected, actual);

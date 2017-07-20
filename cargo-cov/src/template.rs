@@ -63,6 +63,7 @@ fn clamp(value: Value, options: HashMap<String, Value>) -> Result<Value> {
 }
 
 /// Provides the `to_fixed` filter.
+#[cfg_attr(feature = "cargo-clippy", allow(cast_possible_truncation))]
 fn to_fixed(value: Value, options: HashMap<String, Value>) -> Result<Value> {
     let number = value.as_f64().ok_or("expecting number to format")?;
     let digits = options.get("precision").and_then(Value::as_u64).unwrap_or(0) as usize;
