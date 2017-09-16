@@ -232,7 +232,7 @@ impl Graph {
                     None
                 }
             })
-            .sum();
+            .sum::<u64>();
 
         let report_function = report::Function {
             name: source.name,
