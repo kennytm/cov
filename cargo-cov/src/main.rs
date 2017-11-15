@@ -153,7 +153,6 @@ Subcommands:
             (@setting DeriveDisplayOrder)
             (@setting ArgRequiredElseHelp)
             (@setting GlobalVersion)
-            (@setting PropagateGlobalValuesDown)
             (@setting AllowExternalSubcommands)
             (@arg profiler: --profiler [LIB] +global "Path to `libclang_rt.profile_*.a`")
             (@arg target: --target [TRIPLE] +global "Target triple which the covered program will run in")
@@ -219,18 +218,18 @@ fn clean(cargo: &Cargo, matches: &ArgMatches) -> Result<()> {
     let mut clean_target = CleanTargets::empty();
 
     if matches.is_present("gcda") {
-        clean_target |= CLEAN_BUILD_GCDA;
+        clean_target |= CleanTargets::BUILD_GCDA;
     } else if matches.is_present("local") {
-        clean_target |= CLEAN_BUILD_GCDA | CLEAN_BUILD_GCNO;
+        clean_target |= CleanTargets::BUILD_GCDA | CleanTargets::BUILD_GCNO;
     } else if matches.is_present("all_crates") {
-        clean_target |= CLEAN_BUILD_EXTERNAL | CLEAN_BUILD_GCDA | CLEAN_BUILD_GCNO;
+        clean_target |= CleanTargets::BUILD_EXTERNAL | CleanTargets::BUILD_GCDA | CleanTargets::BUILD_GCNO;
     }
     if matches.is_present("report") {
-        clean_target |= CLEAN_REPORT;
+        clean_target |= CleanTargets::REPORT;
     }
 
     if clean_target.is_empty() {
-        clean_target = CLEAN_BUILD_GCDA | CLEAN_BUILD_GCNO;
+        clean_target = CleanTargets::BUILD_GCDA | CleanTargets::BUILD_GCNO;
     }
     cargo.clean(clean_target)
 }

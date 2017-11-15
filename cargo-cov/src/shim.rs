@@ -29,7 +29,7 @@ use utils::{CommandExt, join_2, parent_3};
 
 use fs2::FileExt;
 use rand::{Rng, thread_rng};
-use walkdir::{WalkDir, WalkDirIterator};
+use walkdir::WalkDir;
 
 use std::env;
 use std::ffi::{OsStr, OsString};

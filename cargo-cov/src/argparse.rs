@@ -1,7 +1,7 @@
 //! Extra functions for command line argument parsing.
 
 use error::Result;
-use sourcepath::{SOURCE_TYPE_DEFAULT, SourceType};
+use sourcepath::SourceType;
 use utils::{join_3, parent_3};
 
 use clap::ArgMatches;
@@ -200,7 +200,7 @@ impl<'a> ReportConfig<'a> {
         let output_path = match_or_else(matches, "output", || join_3(&workspace_path, "target", "cov", "report"));
 
         let template_name = matches.value_of_os("template").unwrap_or_else(|| OsStr::new("html"));
-        let allowed_source_types = matches.values_of("include").map_or(SOURCE_TYPE_DEFAULT, |it| SourceType::from_multi_str(it).expect("SourceType"));
+        let allowed_source_types = matches.values_of("include").map_or(SourceType::DEFAULT, |it| SourceType::from_multi_str(it).expect("SourceType"));
 
         Ok(ReportConfig {
             workspace_path,

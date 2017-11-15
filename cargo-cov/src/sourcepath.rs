@@ -43,18 +43,18 @@ bitflags! {
     /// The type of source path.
     pub struct SourceType: u8 {
         /// The path is in the local workspace.
-        const SOURCE_TYPE_LOCAL = 1;
+        const LOCAL = 1;
         /// The "path" is part of macro declaration.
-        const SOURCE_TYPE_MACROS = 2;
+        const MACROS = 2;
         /// Unknown kind of path.
-        const SOURCE_TYPE_UNKNOWN = 4;
+        const UNKNOWN = 4;
         /// The path is of external crates.
-        const SOURCE_TYPE_CRATES = 8;
+        const CRATES = 8;
         /// The path is in the Rust standard libraries.
-        const SOURCE_TYPE_RUSTSRC = 16;
+        const RUSTSRC = 16;
 
         /// The default set of interesting source paths.
-        const SOURCE_TYPE_DEFAULT = SOURCE_TYPE_LOCAL.bits | SOURCE_TYPE_MACROS.bits | SOURCE_TYPE_UNKNOWN.bits;
+        const DEFAULT = SourceType::LOCAL.bits | SourceType::MACROS.bits | SourceType::UNKNOWN.bits;
     }
 }
 
@@ -87,9 +87,9 @@ impl SourceType {
     /// Obtains the path prefix so that
     pub fn prefix(self) -> &'static str {
         match self {
-            SOURCE_TYPE_LOCAL => ".",
-            SOURCE_TYPE_RUSTSRC => "«rust»",
-            SOURCE_TYPE_CRATES => "«crates»",
+            SourceType::LOCAL => ".",
+            SourceType::RUSTSRC => "«rust»",
+            SourceType::CRATES => "«crates»",
             _ => "",
         }
     }
@@ -100,11 +100,11 @@ impl FromStr for SourceType {
     type Err = UnsupportedSourceTypeName;
     fn from_str(s: &str) -> Result<SourceType, UnsupportedSourceTypeName> {
         Ok(match s {
-            "local" => SOURCE_TYPE_LOCAL,
-            "macros" => SOURCE_TYPE_MACROS,
-            "rustsrc" => SOURCE_TYPE_RUSTSRC,
-            "crates" => SOURCE_TYPE_CRATES,
-            "unknown" => SOURCE_TYPE_UNKNOWN,
+            "local" => SourceType::LOCAL,
+            "macros" => SourceType::MACROS,
+            "rustsrc" => SourceType::RUSTSRC,
+            "crates" => SourceType::CRATES,
+            "unknown" => SourceType::UNKNOWN,
             "all" => SourceType::all(),
             _ => return Err(UnsupportedSourceTypeName),
         })
@@ -114,7 +114,7 @@ impl FromStr for SourceType {
 /// Analyzes the the source path and obtain its corresponding [`SourceType`].
 ///
 /// `crates_path` should be the string representation of the workspace path. If the `path` starts with `crates_path`, it
-/// will be considered to be [`SOURCE_TYPE_LOCAL`].
+/// will be considered to be [`SourceType::LOCAL`].
 ///
 /// The return type is a 2-tuple. The second type (`usize`) is the number of bytes should be removed from the prefix of
 /// `path` for human display. This is used in [`simplify_source_path` filter of the default Tera
@@ -127,7 +127,7 @@ impl FromStr for SourceType {
 ///
 /// let source_path = "/Users/travis/build/rust-lang/rust/src/libstd/lib.rs";
 /// let (source_type, prefix_len) = identify_source_path(source_path, "/workspace/path");
-/// assert_eq!(source_type, SOURCE_TYPE_RUSTSRC);
+/// assert_eq!(source_type, SourceType::RUSTSRC);
 ///
 /// // This is how `simplify_source_path` is created.
 /// let simplified_path = format!("{}/{}", source_type.prefix(), &source_path[prefix_len..]);
@@ -135,23 +135,23 @@ impl FromStr for SourceType {
 /// ```
 ///
 /// [`SourceType`]: ./struct.SourceType.html
-/// [`SOURCE_TYPE_LOCAL`]: ./constant.SOURCE_TYPE_LOCAL.html
+/// [`SourceType::LOCAL`]: ./constant.SourceType::LOCAL.html
 pub fn identify_source_path(path: &str, crates_path: &str) -> (SourceType, usize) {
     if path.starts_with(crates_path) {
-        (SOURCE_TYPE_LOCAL, crates_path.len())
+        (SourceType::LOCAL, crates_path.len())
     } else if path.starts_with(&*REGISTRY_PATH) {
         let subpath = &path[REGISTRY_PATH.len()..];
         let first_slash = subpath.find(MAIN_SEPARATOR).map_or(0, |s| s + MAIN_SEPARATOR.len_utf8());
-        (SOURCE_TYPE_CRATES, REGISTRY_PATH.len() + first_slash)
+        (SourceType::CRATES, REGISTRY_PATH.len() + first_slash)
     } else if path.starts_with('<') && path.ends_with(" macros>") {
-        (SOURCE_TYPE_MACROS, 0)
+        (SourceType::MACROS, 0)
     } else if path.starts_with(MACOS_RUSTSRC_DIR) {
-        (SOURCE_TYPE_RUSTSRC, MACOS_RUSTSRC_DIR.len())
+        (SourceType::RUSTSRC, MACOS_RUSTSRC_DIR.len())
     } else if path.starts_with(DOCKER_RUSTSRC_DIR) {
-        (SOURCE_TYPE_RUSTSRC, DOCKER_RUSTSRC_DIR.len())
+        (SourceType::RUSTSRC, DOCKER_RUSTSRC_DIR.len())
     } else if path.starts_with(WINDOWS_RUSTSRC_DIR) {
-        (SOURCE_TYPE_RUSTSRC, WINDOWS_RUSTSRC_DIR.len())
+        (SourceType::RUSTSRC, WINDOWS_RUSTSRC_DIR.len())
     } else {
-        (SOURCE_TYPE_UNKNOWN, 0)
+        (SourceType::UNKNOWN, 0)
     }
 }

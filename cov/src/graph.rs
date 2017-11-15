@@ -212,7 +212,7 @@ impl Graph {
             .flat_map(|ni| self.graph.edges(*ni))
             .filter_map(|er| {
                 let arc = er.weight();
-                if arc.attr.intersects(ARC_ATTR_UNCONDITIONAL | ARC_ATTR_FAKE) {
+                if arc.attr.intersects(ArcAttr::UNCONDITIONAL | ArcAttr::FAKE) {
                     return None;
                 }
                 let arc_taken = arc.count > Some(0);
@@ -228,7 +228,7 @@ impl Graph {
             .edges_directed(exit_block, Direction::Incoming)
             .filter_map(|er| {
                 let arc = er.weight();
-                if arc.attr.contains(ARC_ATTR_FAKE) {
+                if arc.attr.contains(ArcAttr::FAKE) {
                     arc.count
                 } else {
                     None
@@ -250,7 +250,7 @@ impl Graph {
                 branches_taken,
             },
         };
-        r.files.entry(source.filename).or_default().functions.push(report_function);
+        r.files.entry(source.filename).or_default_().functions.push(report_function);
     }
 
     /// Populates the report with information about a block (source code lines).
@@ -259,8 +259,8 @@ impl Graph {
 
         let mut last_line = None;
         for (filename, line_number) in block.iter_lines() {
-            let file = r.files.entry(filename).or_default();
-            let line = file.lines.entry(line_number).or_default();
+            let file = r.files.entry(filename).or_default_();
+            let line = file.lines.entry(line_number).or_default_();
             line.count = cmp::max(line.count, block_count);
             line.attr |= block.attr;
             last_line = Some((filename, line_number));
@@ -275,7 +275,7 @@ impl Graph {
 
         // ignore unconditional arcs, the contribution is obvious.
         let attr = arc.attr;
-        if attr.contains(ARC_ATTR_UNCONDITIONAL) && !attr.contains(ARC_ATTR_CALL_NON_RETURN) {
+        if attr.contains(ArcAttr::UNCONDITIONAL) && !attr.contains(ArcAttr::CALL_NON_RETURN) {
             return None;
         }
 
@@ -365,21 +365,21 @@ impl Graph {
             let edges = graph.edges(src).map(|er| (er.weight().attr, er.id(), er.target())).collect::<Vec<_>>();
 
             let mut mark_throw = false;
-            for &(_, ei, dest) in edges.iter().filter(|&&(a, _, _)| a.contains(ARC_ATTR_FAKE)) {
+            for &(_, ei, dest) in edges.iter().filter(|&&(a, _, _)| a.contains(ArcAttr::FAKE)) {
                 let (ni, block_attr, arc_attr) = if graph[src].is_entry_block() {
-                    (dest, BLOCK_ATTR_NONLOCAL_RETURN, ARC_ATTR_NONLOCAL_RETURN)
+                    (dest, BlockAttr::NONLOCAL_RETURN, ArcAttr::NONLOCAL_RETURN)
                 } else {
                     mark_throw = true;
-                    (src, BLOCK_ATTR_CALL_SITE, ARC_ATTR_CALL_NON_RETURN)
+                    (src, BlockAttr::CALL_SITE, ArcAttr::CALL_NON_RETURN)
                 };
                 graph[ni].attr |= block_attr;
                 graph[ei].attr |= arc_attr;
             }
 
             if mark_throw {
-                let edges_iter = edges.into_iter().filter(|&(a, _, _)| !a.intersects(ARC_ATTR_FAKE | ARC_ATTR_FALLTHROUGH));
+                let edges_iter = edges.into_iter().filter(|&(a, _, _)| !a.intersects(ArcAttr::FAKE | ArcAttr::FALLTHROUGH));
                 for (_, ei, _) in edges_iter {
-                    graph[ei].attr |= ARC_ATTR_THROW;
+                    graph[ei].attr |= ArcAttr::THROW;
                 }
             }
         }
@@ -392,7 +392,7 @@ impl Graph {
         let unconditional_edges = graph
             .node_indices()
             .filter_map(|src| {
-                let mut non_fake_edges = graph.edges(src).filter(|edge_ref| !edge_ref.weight().attr.contains(ARC_ATTR_FAKE));
+                let mut non_fake_edges = graph.edges(src).filter(|edge_ref| !edge_ref.weight().attr.contains(ArcAttr::FAKE));
                 if let Some(er) = non_fake_edges.next() {
                     if non_fake_edges.next().is_none() {
                         return Some((er.source(), er.target(), er.id(), er.weight().attr));
@@ -404,9 +404,9 @@ impl Graph {
         // we need to collect the result, so that we can mutate the graph.
 
         for (src, dest, ei, arc_attr) in unconditional_edges {
-            graph[ei].attr |= ARC_ATTR_UNCONDITIONAL;
-            if arc_attr.contains(ARC_ATTR_FALLTHROUGH) && graph[src].attr.contains(BLOCK_ATTR_CALL_SITE) {
-                graph[dest].attr |= BLOCK_ATTR_CALL_RETURN;
+            graph[ei].attr |= ArcAttr::UNCONDITIONAL;
+            if arc_attr.contains(ArcAttr::FALLTHROUGH) && graph[src].attr.contains(BlockAttr::CALL_SITE) {
+                graph[dest].attr |= BlockAttr::CALL_RETURN;
             }
         }
     }
@@ -584,7 +584,7 @@ impl Graph {
     /// Marks blocks as exceptional.
     fn mark_exceptional_blocks(&mut self) {
         fn is_non_exc_edge(er: EdgeReference<ArcInfo>) -> bool {
-            !er.weight().attr.intersects(ARC_ATTR_FAKE | ARC_ATTR_THROW)
+            !er.weight().attr.intersects(ArcAttr::FAKE | ArcAttr::THROW)
         }
 
         let mut stack = Vec::with_capacity(self.functions.len());
@@ -592,7 +592,7 @@ impl Graph {
             if block.is_entry_block() {
                 stack.push(NodeIndex::new(i));
             } else {
-                block.attr |= BLOCK_ATTR_EXCEPTIONAL;
+                block.attr |= BlockAttr::EXCEPTIONAL;
             }
         }
 
@@ -600,7 +600,7 @@ impl Graph {
         dfs.stack = stack;
 
         while let Some(non_exc_ni) = dfs.next(&self.graph) {
-            self.graph[non_exc_ni].attr.remove(BLOCK_ATTR_EXCEPTIONAL);
+            self.graph[non_exc_ni].attr.remove(BlockAttr::EXCEPTIONAL);
         }
     }
 }
@@ -700,7 +700,7 @@ impl Graph {
         for (local_arc_index, arc) in arcs.arcs.iter().enumerate() {
             let dest_ni = function.node(arc.dest_block);
 
-            let is_real_arc = !arc.flags.contains(ARC_ATTR_ON_TREE);
+            let is_real_arc = !arc.flags.contains(ArcAttr::ON_TREE);
             let arc_info = ArcInfo {
                 index,
                 arc: local_arc_index,
@@ -962,9 +962,9 @@ impl Graph {
 
             let arc = edge_ref.weight();
             let (font_color, label) = count_to_color_label(arc.count);
-            let (style, color, weight) = if arc.attr.contains(ARC_ATTR_FAKE) {
+            let (style, color, weight) = if arc.attr.contains(ArcAttr::FAKE) {
                 ("dotted", "green", 0)
-            } else if arc.attr.contains(ARC_ATTR_FALLTHROUGH) {
+            } else if arc.attr.contains(ArcAttr::FALLTHROUGH) {
                 ("solid", "blue", 100)
             } else {
                 ("solid", "black", 10)
@@ -977,7 +977,7 @@ impl Graph {
                 style,
                 color,
                 weight,
-                !arc.attr.contains(ARC_ATTR_FAKE),
+                !arc.attr.contains(ArcAttr::FAKE),
                 font_color,
                 label,
                 arc.attr,

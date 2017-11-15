@@ -7,7 +7,7 @@
 #![cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
 // The pass-by-value is mandated by Tera.
 
-use sourcepath::{SOURCE_TYPE_MACROS, identify_source_path};
+use sourcepath::{SourceType, identify_source_path};
 use utils::ValueExt;
 
 use md5;
@@ -84,7 +84,7 @@ fn simplify_source_path(value: Value, mut options: HashMap<String, Value>) -> Re
     crate_path.push(MAIN_SEPARATOR);
 
     let (source_type, stripped_len) = identify_source_path(&path, &crate_path);
-    let simplified = if source_type == SOURCE_TYPE_MACROS {
+    let simplified = if source_type == SourceType::MACROS {
         path
     } else {
         format!("{}{}{}", source_type.prefix(), MAIN_SEPARATOR, &path[stripped_len..])

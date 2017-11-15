@@ -7,24 +7,24 @@ use std::ffi::OsString;
 use std::ops::Add;
 use std::path::PathBuf;
 
-/// Adds the `or_default` method to entry API.
+/// Adds the `or_default_` method to entry API.
 pub trait EntryExt<'a> {
     /// Type of "Value" of a key-value pair in the Entry.
     type Value: 'a;
     /// Equivalent to `self.or_insert_with(Self::Value::default)`.
-    fn or_default(self) -> &'a mut Self::Value;
+    fn or_default_(self) -> &'a mut Self::Value;
 }
 
 impl<'a, K: Ord + 'a, V: Default + 'a> EntryExt<'a> for btree_map::Entry<'a, K, V> {
     type Value = V;
-    fn or_default(self) -> &'a mut V {
+    fn or_default_(self) -> &'a mut V {
         self.or_insert_with(V::default)
     }
 }
 
 impl<'a, K: 'a, V: Default + 'a> EntryExt<'a> for hash_map::Entry<'a, K, V> {
     type Value = V;
-    fn or_default(self) -> &'a mut V {
+    fn or_default_(self) -> &'a mut V {
         self.or_insert_with(V::default)
     }
 }

@@ -363,24 +363,24 @@ bitflags! {
         /// The block is unexpected.
         ///
         /// Equivalent to the `GCOV_BLOCK_UNEXPECTED` flag.
-        const BLOCK_ATTR_UNEXPECTED = 2;
+        const UNEXPECTED = 2;
 
         /// The block ends with a function call which may throw an exception.
-        const BLOCK_ATTR_CALL_SITE = 0x1000;
+        const CALL_SITE = 0x1000;
 
         /// The block starts with the return from a function call.
-        const BLOCK_ATTR_CALL_RETURN = 0x2000;
+        const CALL_RETURN = 0x2000;
 
         /// The block is the landing pad for `longjmp`.
-        const BLOCK_ATTR_NONLOCAL_RETURN = 0x4000;
+        const NONLOCAL_RETURN = 0x4000;
 
         /// The block starts as a catch block.
-        const BLOCK_ATTR_EXCEPTIONAL = 0x8000;
+        const EXCEPTIONAL = 0x8000;
     }
 }
 
 derive_serde_for_attr! {
-    BlockAttr, "block", BLOCK_ATTR_UNEXPECTED
+    BlockAttr, "block", BlockAttr::UNEXPECTED
 }
 
 /// Index to a block the [`Blocks`].
@@ -426,35 +426,35 @@ bitflags! {
         /// GCDA file.
         ///
         /// Equivalent to the `GCOV_ARC_ON_TREE` flag.
-        const ARC_ATTR_ON_TREE = 1;
+        const ON_TREE = 1;
 
         /// The arc is fake. Such arcs connect no-return blocks (e.g. infinite loop and `-> !` functions) to the exit
         /// block, i.e. in reality this arc should never be taken.
         ///
         /// Equivalent to the `GCOV_ARC_FAKE` flag.
-        const ARC_ATTR_FAKE = 2;
+        const FAKE = 2;
 
         /// The arc is fall-through.
         ///
         /// Equivalent to the `GCOV_ARC_FALLTHROUGH` flag.
-        const ARC_ATTR_FALLTHROUGH = 4;
+        const FALLTHROUGH = 4;
 
         /// The arc is taken to a `catch` handler.
-        const ARC_ATTR_THROW = 0x10;
+        const THROW = 0x10;
 
         /// The arc is for a function that abnormally returns.
-        const ARC_ATTR_CALL_NON_RETURN = 0x20;
+        const CALL_NON_RETURN = 0x20;
 
         /// The arc is for `setjmp`.
-        const ARC_ATTR_NONLOCAL_RETURN = 0x40;
+        const NONLOCAL_RETURN = 0x40;
 
         /// The arc is an unconditional branch.
-        const ARC_ATTR_UNCONDITIONAL = 0x80;
+        const UNCONDITIONAL = 0x80;
     }
 }
 
 derive_serde_for_attr! {
-    ArcAttr, "arc", ARC_ATTR_ON_TREE | ARC_ATTR_FAKE | ARC_ATTR_FALLTHROUGH
+    ArcAttr, "arc", ArcAttr::ON_TREE | ArcAttr::FAKE | ArcAttr::FALLTHROUGH
 }
 
 /// An arc.
@@ -523,9 +523,9 @@ impl SerializeWithInterner for Line {
 //----------------------------------------------------------------------------------------------------------------------
 //{{{ ArcCounts
 
-/// Counter of how many times an arc is taken. Only arcs without the [`ARC_ATTR_ON_TREE`] flag will be recorded.
+/// Counter of how many times an arc is taken. Only arcs without the [`ArcAttr::ON_TREE`] flag will be recorded.
 ///
-/// [`ARC_ATTR_ON_TREE`]: ./constant.ARC_ATTR_ON_TREE.html
+/// [`ArcAttr::ON_TREE`]: ./constant.ArcAttr::ON_TREE.html
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ArcCounts {

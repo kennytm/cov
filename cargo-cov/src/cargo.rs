@@ -190,13 +190,13 @@ bitflags! {
     /// [`Cargo::clean()`]: ./struct.Cargo.html#method.clean
     pub struct CleanTargets: u8 {
         /// Delete the `target/cov/build/gcda/` folder.
-        const CLEAN_BUILD_GCDA = 1;
+        const BUILD_GCDA = 1;
         /// Delete the `target/cov/build/gcno/` folder and built artifacts of all crates in the current workspace.
-        const CLEAN_BUILD_GCNO = 2;
+        const BUILD_GCNO = 2;
         /// Delete the whole `target/cov/build/` folder.
-        const CLEAN_BUILD_EXTERNAL = 4;
+        const BUILD_EXTERNAL = 4;
         /// Delete the `target/cov/report` folder.
-        const CLEAN_REPORT = 8;
+        const REPORT = 8;
     }
 }
 
@@ -238,13 +238,13 @@ impl<'a> Cargo<'a> {
             Ok(())
         }
 
-        if clean_targets.contains(CLEAN_BUILD_EXTERNAL) {
+        if clean_targets.contains(CleanTargets::BUILD_EXTERNAL) {
             do_clean(&self.cov_build_path)?;
         } else {
-            if clean_targets.contains(CLEAN_BUILD_GCDA) {
+            if clean_targets.contains(CleanTargets::BUILD_GCDA) {
                 do_clean(&self.cov_build_path.join("gcda"))?
             }
-            if clean_targets.contains(CLEAN_BUILD_GCNO) {
+            if clean_targets.contains(CleanTargets::BUILD_GCNO) {
                 let mut cmd = Command::new(&self.cargo_path);
                 cmd.current_dir(&self.cov_build_path)
                     .env("RUSTC", &self.rustc_path) // No need to run our shim.
@@ -262,7 +262,7 @@ impl<'a> Cargo<'a> {
             }
         }
 
-        if clean_targets.contains(CLEAN_REPORT) {
+        if clean_targets.contains(CleanTargets::REPORT) {
             do_clean(&self.cov_build_path.with_file_name("report"))?;
         }
         Ok(())
