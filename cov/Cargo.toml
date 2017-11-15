@@ -9,7 +9,7 @@ license = "MIT"
 keywords = ["coverage", "gcov", "lcov"]
 categories = ["parsing"]
 
-[badge]
+[badges]
 maintenance = { status = "experimental" }
 
 [dependencies]

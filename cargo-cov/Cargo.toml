@@ -10,7 +10,7 @@ license = "MIT"
 keywords = ["cargo", "subcommand", "coverage", "gcov", "lcov"]
 categories = ["command-line-utilities", "development-tools", "development-tools::cargo-plugins", "development-tools::testing"]
 
-[badge]
+[badges]
 maintenance = { status = "experimental" }
 
 # Note: `pest` (via `tera`) is licensed in MPL-2.0, and `unidecode` (via `slug` via `tera`) in BSD-3.
