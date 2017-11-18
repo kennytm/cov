@@ -57,12 +57,15 @@ use std::process::Command;
 /// | `-Clink-dead-code` | Do compile functions not called by anyone, so the function can appear red in the report |
 /// | `-Coverflow-checks=off` | Disable overflow checks, which create unnecessary branches. |
 /// | `-Cinline-threshold=0` | Disable inlining, which complicates control flow. |
+/// | `-Ccodegen-units=1` | Disable ThinLTO which corrupts debuginfo (see [rustc issue #45511]). |
 ///
 /// Additionally, all GCNO files generated will be moved to `$COV_BUILD_PATH/gcno/` after the build succeeds.
 ///
 /// # Panics
 ///
 /// Panics when any of the above environment variables is not set.
+///
+/// [rustc issue #45511]: https://github.com/rust-lang/rust/issues/45511
 pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
     let rustc_path = env::var_os("COV_RUSTC").expect("COV_RUSTC");
     let cov_build_path_os = env::var_os("COV_BUILD_PATH").expect("COV_BUILD_PATH");
@@ -86,6 +89,7 @@ pub fn rustc<'a, I: Iterator<Item = &'a OsStr> + Clone>(args: I) -> Result<()> {
             "-Clink-dead-code",
             "-Coverflow-checks=off",
             "-Cinline-threshold=0",
+            "-Ccodegen-units=1",
             // "-Zdebug-macros", // don't enable, makes the gcno graph involving `assert!` even worse.
         ]);
     }
