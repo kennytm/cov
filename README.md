@@ -4,7 +4,7 @@
 `cargo-cov` is a cargo subcommand which performs source coverage collection and reporting for Rust crates. `cargo-cov`
 utilizes LLVM's gcov-compatible profile generation pass, and supports a lot of platforms.
 
-* ✓ Linux, Windows (MSVC only), macOS
+* ✓ FreeBSD, Linux, macOS, Windows (MSVC only)
 * ✓ x86_64, x86
 * ✓ Rust 1.17 — 1.20
 

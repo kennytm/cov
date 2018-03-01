@@ -23,6 +23,9 @@ const PROFILER_GLOB_PATTERNS: &[&str] = &[
     // Fedora "compiler-rt" package OpenSUSE / OpenSUSE "llvm-clang" package
     "/usr/lib*/clang/*/lib/linux/",
 
+    // FreeBSD's base compiler, on most architectures
+    "/usr/lib*/clang/*/lib/freebsd/",
+
     // macOS via Homebrew
     "/usr/local/opt/llvm/lib/clang/*/lib/darwin/",
 
