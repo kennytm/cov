@@ -300,7 +300,7 @@ impl<'si, 'de, D: Deserializer<'de>> Deserializer<'de> for ToSymbol<'si, D> {
             interner: self.interner,
             value: visitor,
         };
-        self.value.deserialize_u64(visitor)
+        self.value.deserialize_str(visitor)
     }
 
     forward_to_deserialize_any! {

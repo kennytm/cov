@@ -3,6 +3,9 @@
 //! Please see documentation of the [`error-chain` crate](https://docs.rs/error-chain/0.10.0/error_chain/) for detailed
 //! usage.
 
+#![allow(renamed_and_removed_lints, unused_doc_comments)]
+// ^ remove a release with https://github.com/rust-lang-nursery/error-chain/pull/247 is published.
+
 use std::process::ExitStatus;
 
 error_chain! {

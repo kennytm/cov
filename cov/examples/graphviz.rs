@@ -14,7 +14,7 @@ use std::io::stdout;
 quick_main!(run);
 
 fn run() -> Result<()> {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     let matches = clap_app!(graphviz =>
         (@arg analyze: -a --analyze "Produce graph after analysis")

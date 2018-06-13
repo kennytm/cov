@@ -72,7 +72,7 @@ fn main() {
 /// Runs the `cargo-cov` program.
 fn run() -> Result<()> {
     let matches = parse_args();
-    env_logger::init().expect("initialized logger");
+    env_logger::init();
 
     let (subcommand, matches) = matches.subcommand();
     let matches = matches.expect("matches");

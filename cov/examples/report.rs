@@ -12,7 +12,7 @@ use std::io::stdout;
 quick_main!(run);
 
 fn run() -> Result<()> {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     let mut graph = Graph::default();
     let mut interner = Interner::new();

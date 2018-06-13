@@ -12,7 +12,7 @@ use std::io::stdout;
 quick_main!(run);
 
 fn run() -> Result<()> {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     let filename = env::args_os().nth(1).expect("filename");
     let mut interner = Interner::new();
