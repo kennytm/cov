@@ -1,7 +1,5 @@
 //! Additional methods for libstd and external crates.
 
-use fixedbitset::FixedBitSet;
-
 use std::collections::{btree_map, hash_map};
 use std::ffi::OsString;
 use std::ops::Add;
@@ -26,19 +24,6 @@ impl<'a, K: 'a, V: Default + 'a> EntryExt<'a> for hash_map::Entry<'a, K, V> {
     type Value = V;
     fn or_default_(self) -> &'a mut V {
         self.or_insert_with(V::default)
-    }
-}
-
-/// Sets the whole `FixedBitSet` to ones.
-pub fn fill_fixedbitset_with_ones(bitset: &mut FixedBitSet) {
-    let excess_bits = bitset.len() % 32;
-    let slice = bitset.as_mut_slice();
-    for b in slice.iter_mut() {
-        *b = !0;
-    }
-    if excess_bits != 0 {
-        let last_item = slice.last_mut().expect("non-empty bitset");
-        *last_item = 0x7fff_ffff >> (31 - excess_bits);
     }
 }
 

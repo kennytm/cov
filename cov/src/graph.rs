@@ -420,7 +420,7 @@ impl Graph {
         let mut old_green_blocks = FixedBitSet::with_capacity(self.graph.node_count());
         let mut green_blocks = old_green_blocks.clone();
         let mut red_blocks = old_green_blocks.clone();
-        fill_fixedbitset_with_ones(&mut red_blocks);
+        red_blocks.set_range(.., true);
 
         let mut should_process = true;
 
