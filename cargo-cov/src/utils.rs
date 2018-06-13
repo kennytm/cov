@@ -51,7 +51,7 @@ macro_rules! do_compare {
     ($lhs:expr, $rhs:expr) => {
         compare_iter($lhs, $rhs, |_| false, |a, b| a.cmp(&b), |c| {
             #[cfg_attr(feature = "cargo-clippy", allow(cast_possible_wrap))]
-            match **c {
+            match *c {
                 b @ 0x30 ... 0x39 => Some((b - 0x30) as isize),
                 _ => None,
             }
@@ -62,8 +62,8 @@ macro_rules! do_compare {
 /// Compares two paths using natural sorting.
 #[cfg(any(target_os = "redox", unix))]
 pub fn compare_naturally(lhs: &Path, rhs: &Path) -> Ordering {
-    let lhs = lhs.as_os_str().as_bytes().iter();
-    let rhs = rhs.as_os_str().as_bytes().iter();
+    let lhs = lhs.as_os_str().as_bytes().iter().cloned();
+    let rhs = rhs.as_os_str().as_bytes().iter().cloned();
     do_compare!(lhs, rhs)
 }
 
