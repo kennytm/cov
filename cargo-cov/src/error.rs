@@ -20,6 +20,7 @@ error_chain! {
         Io(::std::io::Error);
         Json(::serde_json::Error);
         WalkDir(::walkdir::Error);
+        FsExtra(::fs_extra::error::Error);
     }
 
     errors {

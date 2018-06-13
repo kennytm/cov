@@ -57,7 +57,6 @@
 //! [`Report`]: ./report/struct.Report.html
 
 #![recursion_limit = "128"] // needed for error_chain.
-#![doc(html_root_url = "https://docs.rs/cov/0.1.0")]
 
 #![cfg_attr(feature = "cargo-clippy", warn(warnings, clippy_pedantic))]
 #![cfg_attr(feature = "cargo-clippy", allow(missing_docs_in_private_items, use_debug, cast_possible_truncation))]

@@ -3,7 +3,7 @@
 //!
 //! Please see the [crate README](https://github.com/kennytm/cov#readme) for detail.
 
-#![doc(html_root_url="https://docs.rs/cargo-cov/0.1.0")]
+#![recursion_limit = "128"] // needed for error_chain.
 
 #![cfg_attr(feature = "cargo-clippy", warn(warnings, clippy_pedantic))]
 #![cfg_attr(feature = "cargo-clippy", allow(missing_docs_in_private_items, use_debug, non_ascii_literal, shadow_reuse, unused_results))]
@@ -23,9 +23,9 @@ extern crate serde_derive;
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_json;
-extern crate copy_dir;
 extern crate cov;
 extern crate env_logger;
+extern crate fs_extra;
 extern crate fs2;
 extern crate glob;
 extern crate md5;

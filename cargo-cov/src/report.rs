@@ -143,7 +143,7 @@ use sourcepath::{SourceType, identify_source_path};
 use template::new as new_template;
 use utils::clean_dir;
 
-use copy_dir::copy_dir;
+use fs_extra::dir;
 use cov::{self, Gcov, Graph, Interner, Report, Symbol};
 use serde_json::Value;
 use tera::{Context, Tera};
@@ -207,7 +207,7 @@ fn render(config: &ReportConfig, report: &Report, interner: &Interner) -> Result
     // Copy the static resources if exist.
     template_path.set_file_name("static");
     if template_path.is_dir() {
-        copy_dir(&template_path, config.output_path.join("static"))?;
+        dir::copy(&template_path, config.output_path.join("static"), &dir::CopyOptions::new())?;
     }
 
     template_path.set_file_name("tera");
