@@ -109,7 +109,7 @@ pub fn is_rustc_compiling_local_crate<'a, I: IntoIterator<Item = &'a OsStr>>(arg
         }
 
         let crate_path = Path::new(arg);
-        return crate_path.starts_with(workspace_path);
+        return crate_path.is_relative() || crate_path.starts_with(workspace_path);
     }
     false
 }
