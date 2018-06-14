@@ -207,7 +207,9 @@ fn render(config: &ReportConfig, report: &Report, interner: &Interner) -> Result
     // Copy the static resources if exist.
     template_path.set_file_name("static");
     if template_path.is_dir() {
-        dir::copy(&template_path, config.output_path.join("static"), &dir::CopyOptions::new())?;
+        let mut options = dir::CopyOptions::new();
+        options.copy_inside = true;
+        dir::copy(&template_path, config.output_path.join("static"), &options)?;
     }
 
     template_path.set_file_name("tera");
