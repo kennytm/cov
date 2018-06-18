@@ -120,6 +120,9 @@ impl<'a> Cargo<'a> {
     /// * Place all output artifact to `target/cov/build/` instead of `target/`, so the profiled objects will not
     ///   interfere with normal objects
     /// * Configure `cargo` to use [`cargo-cov` shims](../shim/index.html) when building and running tests.
+    /// * Disable incremental compilation to workaround rustc issue [#50203].
+    ///
+    /// [#50203]: https://github.com/rust-lang/rust/issues/50203
     fn prepare_cov_build_path(&self) -> Result<()> {
         let self_path = match current_exe() {
             Ok(path) => escape(Cow::Owned(path.into_string_lossy())).into_owned(),
@@ -150,6 +153,7 @@ impl<'a> Cargo<'a> {
                 target_dir: ".",
                 rustc: &rustc_shim,
                 rustdoc: &rustdoc_shim,
+                incremental: false,
             },
             target,
         })?;
@@ -338,6 +342,7 @@ struct CargoConfigBuild<'a> {
     target_dir: &'a str,
     rustc: &'a Path,
     rustdoc: &'a Path,
+    incremental: bool,
 }
 
 #[derive(Debug, Serialize)]
