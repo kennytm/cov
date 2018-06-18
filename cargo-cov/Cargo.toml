@@ -1,6 +1,6 @@
 [package]
 name = "cargo-cov"
-version = "0.0.3"
+version = "0.0.4"
 authors = ["kennytm <kennytm@gmail.com>"]
 description = "Collect source coverage via LLVM-GCOV (⚠ not fully tested, may eat your laundry)"
 build = "build.rs"
