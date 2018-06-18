@@ -6,10 +6,9 @@ utilizes LLVM's gcov-compatible profile generation pass, and supports a lot of p
 
 * ✓ FreeBSD, Linux, macOS, Windows (MSVC only)
 * ✓ x86_64, x86
-* ✓ Rust 1.17 — 1.20
 
-Usage: for Local Testing on Rust 1.19+
---------------------------------------
+Usage: for Local Testing on nightly Rust
+----------------------------------------
 
 You may install `cargo-cov` via `cargo`.
 
@@ -30,24 +29,19 @@ cargo cov test
 cargo cov report --open
 ```
 
-Usage: for Testing on Rust 1.17 to 1.18
----------------------------------------
+Usage: for Testing on stable Rust (1.19+)
+-----------------------------------------
 
-We strongly recommend you use Rust 1.19 or above since the following features will greatly improve coverage quality:
+We strongly recommend you use nightly Rust since only the nightly toolchain has built-in instrumented profiling support
+via [`-Zprofile`](https://github.com/rust-lang/rust/issues/42524).
 
-* [Official instrumented profiling support via `-Zprofile`](https://github.com/rust-lang/rust/issues/42524).
-* [Configurating target-specific runner in Cargo](https://github.com/rust-lang/cargo/pull/3954).
-* [Listing `target/` directory in `cargo metadata`](https://github.com/rust-lang/cargo/pull/4022).
-
-In particular, target-specific runner is required to prevent the profiled program from trying to merge two incompatible
-coverage data analysis which will corrupt the coverage report. If you must use pre-1.19 toolchain, please do the
-following:
+If you must use a stable toolchain, you may try the following:
 
 1. Install the compiler-rt profile library.
 
     | Target         | Instruction                                                  |
     |:---------------|:-------------------------------------------------------------|
-    | Ubuntu, Debian | Install `libclang-common-3.8-dev`, or simply install `clang` |
+    | Ubuntu, Debian | Install `libclang-common-6.0-dev`, or simply install `clang` |
     | Fedora         | Install `compiler-rt`                                        |
     | OpenSUSE       | Install `llvm-clang`                                         |
     | Windows (MSVC) | Install [Clang for Windows] Pre-Built Binary from LLVM       |
@@ -62,7 +56,6 @@ following:
     cargo cov test --lib
     ```
 
-(`cargo-cov` does not support Rust 1.16 or below since it uses [`BTreeMap::range`] which is stablized since 1.17.)
+We do not guarantee that a correct coverage profile will be generated using this method.
 
 [Clang for Windows]: http://releases.llvm.org/download.html
-[`BTreeMap::range`]: https://doc.rust-lang.org/std/collections/struct.BTreeMap.html#method.range
