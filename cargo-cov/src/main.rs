@@ -6,7 +6,7 @@
 #![recursion_limit = "128"] // needed for error_chain.
 
 #![cfg_attr(feature = "cargo-clippy", warn(warnings, clippy_pedantic))]
-#![cfg_attr(feature = "cargo-clippy", allow(missing_docs_in_private_items, use_debug, non_ascii_literal, shadow_reuse, unused_results))]
+#![cfg_attr(feature = "cargo-clippy", allow(missing_docs_in_private_items, non_ascii_literal, shadow_reuse, unused_results))]
 // `unused_results` caused too many false positive here.
 
 #[macro_use]
@@ -34,7 +34,7 @@ extern crate open;
 extern crate rand;
 extern crate rustc_demangle;
 extern crate shell_escape;
-extern crate tempdir;
+extern crate tempfile;
 extern crate tera;
 extern crate termcolor;
 extern crate toml;

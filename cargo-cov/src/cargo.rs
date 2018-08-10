@@ -9,7 +9,7 @@ use utils::{CommandExt, clean_dir, set_executable};
 use cov::IntoStringLossy;
 use serde_json::from_reader;
 use shell_escape::escape;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -354,7 +354,7 @@ struct CargoConfigTarget<'a> {
 ///
 /// `-Zprofile` is only supported on nightly Rust since 1.19, for a selected list of targets.
 fn supports_built_in_profiler(rustc: &str, target: &str) -> bool {
-    let dir = TempDir::new("supports_built_in_profiler").expect("created temporary directory");
+    let dir = TempDir::new().expect("created temporary directory");
 
     let result = Command::new(rustc)
         .stdin(Stdio::null())
@@ -385,7 +385,7 @@ fn supports_built_in_profiler(rustc: &str, target: &str) -> bool {
 fn supports_target_runner(cargo: &OsStr) -> Result<bool> {
     use std::io::Write;
 
-    let dir = TempDir::new("supports_target_runner")?;
+    let dir = TempDir::new()?;
 
     let mut cargo_config_path = dir.path().join(".cargo");
     create_dir(&cargo_config_path)?;
