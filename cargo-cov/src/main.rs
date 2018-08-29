@@ -28,6 +28,7 @@ extern crate env_logger;
 extern crate fs_extra;
 extern crate fs2;
 extern crate glob;
+extern crate home;
 extern crate md5;
 extern crate natord;
 extern crate open;

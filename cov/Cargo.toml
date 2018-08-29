@@ -1,6 +1,6 @@
 [package]
 name = "cov"
-version = "0.0.4"
+version = "0.0.5"
 authors = ["kennytm <kennytm@gmail.com>"]
 description = "gcov format (*.gcda/*.gcno) parser and analyzer in pure Rust"
 documentation = "https://docs.rs/cov"

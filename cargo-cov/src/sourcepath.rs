@@ -9,8 +9,9 @@
 
 use cov::IntoStringLossy;
 
-use std::env;
-use std::path::{MAIN_SEPARATOR, PathBuf};
+use home::cargo_home;
+
+use std::path::MAIN_SEPARATOR;
 use std::str::FromStr;
 
 /// Path to the hard-coded Rust source of libraries built by macOS builders on Travis CI.
@@ -26,11 +27,7 @@ lazy_static! {
     ///
     /// The string should be equal to `$CARGO_HOME/registry/src` where `$CARGO_HOME` is `~/.cargo` by default.
     static ref REGISTRY_PATH: String = {
-        let mut cargo_home = env::var_os("CARGO_HOME").map_or_else(|| {
-            let mut home = env::home_dir().unwrap_or_else(|| "/".into());
-            home.push(".cargo");
-            home
-        }, PathBuf::from);
+        let mut cargo_home = cargo_home().expect("$CARGO_HOME is undefined");
         cargo_home.push("registry");
         cargo_home.push("src");
         let mut registry_path = cargo_home.into_string_lossy();
