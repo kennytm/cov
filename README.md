@@ -41,7 +41,7 @@ If you must use a stable toolchain, you may try the following:
 
     | Target         | Instruction                                                  |
     |:---------------|:-------------------------------------------------------------|
-    | Ubuntu, Debian | Install `libclang-common-6.0-dev`, or simply install `clang` |
+    | Ubuntu, Debian | Install `libclang-common-7-dev`, or simply install `clang`   |
     | Fedora         | Install `compiler-rt`                                        |
     | OpenSUSE       | Install `llvm-clang`                                         |
     | Windows (MSVC) | Install [Clang for Windows] Pre-Built Binary from LLVM       |
